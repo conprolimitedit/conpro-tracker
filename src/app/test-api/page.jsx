@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 
-const page = () => {
+const TestApiPage = () => {
     const [users, setUsers] = useState([])
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
@@ -391,4 +391,4 @@ const page = () => {
   )
 }
 
-export default page
+export default TestApiPage

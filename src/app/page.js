@@ -5,7 +5,7 @@ import { ToastContainer, toast } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
 import { useAuth } from './contexts/AuthContext'
 
-const page = () => {
+const Page = () => {
   const [formData, setFormData] = useState({
     username: '',
     password: ''
@@ -269,4 +269,4 @@ const page = () => {
   )
 }
 
-export default page
+export default Page
