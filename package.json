@@ -12,6 +12,7 @@
     "@fullcalendar/core": "^6.1.18",
     "@supabase/supabase-js": "^2.57.4",
     "bcrypt": "^6.0.0",
+    "bcryptjs": "^2.4.3",
     "date-fns": "^4.1.0",
     "framer-motion": "^12.23.12",
     "jsonwebtoken": "^9.0.2",
