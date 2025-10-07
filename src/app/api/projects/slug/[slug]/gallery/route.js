@@ -245,14 +245,53 @@ export async function DELETE(request, { params }) {
     const { slug } = params
     const { searchParams } = new URL(request.url)
     const itemId = searchParams.get('id')
+    const albumName = searchParams.get('album')
 
-    console.log('🚀 Deleting gallery item:', itemId, 'for project slug:', slug)
+    console.log('🚀 Deleting gallery content for project slug:', slug, 'itemId:', itemId, 'album:', albumName)
+
+    // Delete entire album (all items)
+    if (albumName && albumName.trim() !== '') {
+      // Fetch all items in album to collect storage paths
+      const { data: albumItems, error: fetchAlbumErr } = await supabase
+        .from('project_gallery')
+        .select('id, file_data')
+        .eq('project_slug', slug)
+        .eq('album_name', albumName)
+
+      if (fetchAlbumErr) {
+        console.error('❌ Failed to fetch album items:', fetchAlbumErr)
+        return NextResponse.json({ success: false, error: 'Failed to fetch album items' }, { status: 500 })
+      }
+
+      const pathsToDelete = (albumItems || [])
+        .map(i => i?.file_data?.upload_response?.path)
+        .filter(Boolean)
+
+      if (pathsToDelete.length > 0) {
+        const { error: removeErr } = await supabase.storage
+          .from('conproProjectsBucket')
+          .remove(pathsToDelete)
+        if (removeErr) {
+          console.warn('⚠️ Some storage files could not be deleted:', removeErr)
+        }
+      }
+
+      const { error: dbDeleteErr } = await supabase
+        .from('project_gallery')
+        .delete()
+        .eq('project_slug', slug)
+        .eq('album_name', albumName)
+
+      if (dbDeleteErr) {
+        console.error('❌ Failed to delete album records:', dbDeleteErr)
+        return NextResponse.json({ success: false, error: 'Failed to delete album records' }, { status: 500 })
+      }
+
+      return NextResponse.json({ success: true, message: 'Album deleted successfully' })
+    }
 
     if (!itemId) {
-      return NextResponse.json({
-        success: false,
-        error: 'Gallery item ID is required'
-      }, { status: 400 })
+      return NextResponse.json({ success: false, error: 'Gallery item ID or album is required' }, { status: 400 })
     }
 
     // Get the gallery item first to get file path
@@ -305,10 +344,7 @@ export async function DELETE(request, { params }) {
 
     console.log('✅ Gallery item deleted successfully')
 
-    return NextResponse.json({
-      success: true,
-      message: 'Gallery item deleted successfully'
-    })
+    return NextResponse.json({ success: true, message: 'Gallery item deleted successfully' })
 
   } catch (error) {
     console.error('💥 Delete gallery item error:', error)

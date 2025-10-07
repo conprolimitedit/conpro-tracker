@@ -365,8 +365,17 @@ const ProjectSummaryPage = () => {
     return validEvents
   }, [phases, subPhaseEvents])
 
-  // Progress from sub-phases completion
-  const progressPercent = computeProgressPercent(subPhases)
+  // Progress (planned vs cumulative) from project fields
+  const plannedProgress = useMemo(() => {
+    const v = Number(projectData?.planned_progress ?? 0)
+    if (Number.isNaN(v)) return 0
+    return Math.max(0, Math.min(100, v))
+  }, [projectData])
+  const cumulativeProgress = useMemo(() => {
+    const v = Number(projectData?.cumulative_progress ?? 0)
+    if (Number.isNaN(v)) return 0
+    return Math.max(0, Math.min(100, v))
+  }, [projectData])
 
   if (loading) {
     return (
@@ -399,23 +408,21 @@ const ProjectSummaryPage = () => {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pb-24">
-        {/* Progress Overview */}
+        {/* Planned and Cumulative Progress (only) */}
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-6">
-          <div className="flex items-center justify-between">
+          <div className="space-y-4">
             <div>
-              <h5 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Overall Progress</h5>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Based on phases marked Completed</p>
+              <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-1"><span>Planned Progress</span><span>{plannedProgress}%</span></div>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                <div className="bg-indigo-600 h-3 rounded-full" style={{ width: `${plannedProgress}%` }} />
+              </div>
             </div>
-            <div className="flex items-center space-x-2 text-blue-600 dark:text-blue-400">
-              <FiTrendingUp />
-              <span className="font-medium">{progressPercent}%</span>
+            <div>
+              <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-1"><span>Cumulative Progress</span><span>{cumulativeProgress}%</span></div>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                <div className="bg-blue-600 h-3 rounded-full" style={{ width: `${cumulativeProgress}%` }} />
+              </div>
             </div>
-          </div>
-          <div className="mt-4 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
-            <div
-              className="bg-blue-600 h-3 rounded-full"
-              style={{ width: `${progressPercent}%` }}
-            />
           </div>
         </div>
 

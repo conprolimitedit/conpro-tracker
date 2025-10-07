@@ -1,6 +1,6 @@
 'use client'
 import React, { useState, useEffect } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { toast } from 'react-toastify'
 import { 
   FiImage, 
@@ -19,6 +19,7 @@ import UserHeader from '../UserHeader'
 
 const ProjectGallery = () => {
   const params = useParams()
+  const router = useRouter()
   const { slug } = params
   const isNewProject = slug === 'addNewProject'
   
@@ -37,12 +38,18 @@ const ProjectGallery = () => {
   const [album, setAlbum] = useState('')
   const [replacingId, setReplacingId] = useState(null)
   const [showAlbumModal, setShowAlbumModal] = useState(false)
+  const [albumEditMode, setAlbumEditMode] = useState(false)
+  const [editingAlbumOriginalName, setEditingAlbumOriginalName] = useState('')
   const [albumNameInput, setAlbumNameInput] = useState('')
   const [albumTitleInput, setAlbumTitleInput] = useState('')
   const [albumFiles, setAlbumFiles] = useState([])
   const [showRenameModal, setShowRenameModal] = useState(false)
   const [renameOld, setRenameOld] = useState('')
   const [renameNew, setRenameNew] = useState('')
+  const [showDeleteAlbumModal, setShowDeleteAlbumModal] = useState(false)
+  const [albumToDelete, setAlbumToDelete] = useState('')
+  const [deletingAlbum, setDeletingAlbum] = useState(false)
+  const [creatingAlbum, setCreatingAlbum] = useState(false)
 
   useEffect(() => {
     if (!isNewProject) {
@@ -187,6 +194,7 @@ const ProjectGallery = () => {
         // refresh album view
         setCurrentPage(1)
         fetchGalleryData(1, false)
+        try { router.refresh() } catch (_) {}
       } else {
         console.error('❌ Upload error:', data.error)
         toast.error(`Upload failed: ${data.error}`)
@@ -295,6 +303,7 @@ const ProjectGallery = () => {
         toast.success(`Successfully uploaded ${newItems.length} file(s)!`)
         setCurrentPage(1)
         fetchGalleryData(1, false)
+        try { router.refresh() } catch (_) {}
       } else {
         throw new Error(data.error || 'Upload failed')
       }
@@ -354,14 +363,29 @@ const ProjectGallery = () => {
         </div>
         
         {/* Add Album Button */}
-        <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-2">
           <button
-            onClick={() => setShowAlbumModal(true)}
+            onClick={() => { 
+              setAlbumEditMode(false);
+              setAlbumNameInput('');
+              setAlbumTitleInput('');
+              setAlbumFiles([]);
+              setShowAlbumModal(true);
+            }}
             className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white !text-sm !font-medium rounded-lg hover:bg-blue-700 transition-colors"
           >
             <FiPlus className="text-lg" />
-            <span>Add Album</span>
+            <span>Add New Album</span>
           </button>
+                {album && (
+                  <button
+                    onClick={() => { setAlbumToDelete(album); setShowDeleteAlbumModal(true) }}
+                    className="flex items-center space-x-2 px-3 py-2 bg-red-600 text-white !text-xs !font-medium rounded-lg hover:bg-red-700 transition-colors"
+                  >
+                    <FiX className="text-sm" />
+                    <span>Delete Album</span>
+                  </button>
+                )}
         </div>
       </div>
 
@@ -411,13 +435,29 @@ const ProjectGallery = () => {
                 <div key={groupName}>
                   <div className="flex items-center justify-between mb-3">
                     <h4 className="text-base font-semibold text-gray-900 dark:text-white">{groupName}</h4>
-                    <button
-                      onClick={() => { setRenameOld(groupName); setRenameNew(groupName); setShowRenameModal(true) }}
-                      className="inline-flex items-center space-x-2 px-3 py-1.5 bg-gray-700 text-white text-xs rounded-lg hover:bg-gray-800"
-                    >
-                      <FiEdit3 />
-                      <span>Rename Album</span>
-                    </button>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => { 
+                          setAlbumEditMode(true);
+                          setEditingAlbumOriginalName(groupName);
+                          setAlbumNameInput(groupName);
+                          setAlbumTitleInput('');
+                          setAlbumFiles([]);
+                          setShowAlbumModal(true);
+                        }}
+                        className="inline-flex items-center space-x-2 px-3 py-1.5 bg-gray-700 text-white text-xs rounded-lg hover:bg-gray-800"
+                      >
+                        <FiEdit3 />
+                        <span>Edit Album</span>
+                      </button>
+                      <button
+                        onClick={() => { setAlbumToDelete(groupName); setShowDeleteAlbumModal(true) }}
+                        className="inline-flex items-center space-x-2 px-3 py-1.5 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700"
+                      >
+                        <FiX />
+                        <span>Delete Album</span>
+                      </button>
+                    </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                   {groups[groupName].map((item) => (
@@ -428,7 +468,7 @@ const ProjectGallery = () => {
               >
                 {/* Thumbnail */}
                 <div className="aspect-[4/3] bg-gray-100 dark:bg-gray-700 relative">
-                  {item.type === 'image' ? (
+                  {(item.type && item.type.startsWith('image')) || (item.url && /\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/i.test(item.url)) ? (
                     <img
                       src={item.thumbnail}
                       alt={item.name}
@@ -543,7 +583,7 @@ const ProjectGallery = () => {
                 {/* Preview */}
                 <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-4 flex items-center justify-center min-h-[300px] max-h-[500px] overflow-hidden">
                   <div className="w-full h-full flex items-center justify-center">
-                    {selectedItem.type === 'image' ? (
+                    {(selectedItem.type && selectedItem.type.startsWith('image')) || (selectedItem.url && /\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/i.test(selectedItem.url)) ? (
                       <img
                         src={selectedItem.url}
                         alt={selectedItem.name}
@@ -551,7 +591,7 @@ const ProjectGallery = () => {
                       />
                     ) : (
                       <video
-                        src={selectedItem.url}
+                        src={`/api/video?id=${encodeURIComponent(selectedItem.id)}`}
                         controls
                         className="max-w-full max-h-full object-contain"
                       />
@@ -624,7 +664,7 @@ const ProjectGallery = () => {
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && itemToDelete && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[2000] p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[2500] p-4">
           <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6">
             <div className="flex items-center space-x-3 mb-4">
               <div className="flex-shrink-0">
@@ -693,14 +733,73 @@ const ProjectGallery = () => {
         </div>
       )}
 
+      {/* Delete Album Confirmation Modal */}
+      {showDeleteAlbumModal && albumToDelete && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[2600] p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6">
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Delete Album</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">This will remove the album "{albumToDelete}" and all its files permanently.</p>
+              {deletingAlbum && (
+                <div className="flex items-center space-x-2 mt-3 text-sm text-red-600">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600"></div>
+                  <span>Deleting album...</span>
+                </div>
+              )}
+            </div>
+            <div className="flex space-x-3">
+              <button
+                onClick={() => { if (!deletingAlbum) { setShowDeleteAlbumModal(false); setAlbumToDelete('') } }}
+                disabled={deletingAlbum}
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (deletingAlbum) return
+                  setDeletingAlbum(true)
+                  try {
+                    const res = await fetch(`/api/projects/slug/${slug}/gallery?album=${encodeURIComponent(albumToDelete)}`, { method: 'DELETE' })
+                    const data = await res.json()
+                    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to delete album')
+                    toast.success('Album deleted successfully')
+                    setShowDeleteAlbumModal(false)
+                    setAlbumToDelete('')
+                    setCurrentPage(1)
+                    fetchGalleryData(1, false)
+                    try { router.refresh() } catch (_) {}
+                    try { window.location.reload() } catch (_) {}
+                  } catch (err) {
+                    toast.error(err.message)
+                  } finally {
+                    setDeletingAlbum(false)
+                  }
+                }}
+                disabled={deletingAlbum}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {deletingAlbum ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Album Modal */}
       {showAlbumModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[2000] p-4">
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-3xl mx-4 max-h-[85vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-2">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Create Album</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{albumEditMode ? 'Edit Album' : 'Create Album'}</h3>
               <button onClick={() => setShowAlbumModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">✕</button>
             </div>
+            {creatingAlbum && (
+              <div className="flex items-center space-x-2 mb-2 text-sm text-blue-600">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                <span>{albumEditMode ? 'Saving changes...' : 'Creating album...'}</span>
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Album Name</label>
@@ -719,7 +818,7 @@ const ProjectGallery = () => {
               <FiUpload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
               <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
                 <label htmlFor="album-file-upload" className="relative cursor-pointer bg-white dark:bg-gray-800 rounded-md font-medium text-blue-600 hover:text-blue-500">
-                  <span>Select files</span>
+                  <span>{albumEditMode ? 'Add more files' : 'Select files'}</span>
                   <input id="album-file-upload" name="album-file-upload" type="file" multiple accept="image/*,video/*" onChange={(e)=>{setAlbumFiles(prev => [...prev, ...Array.from(e.target.files)])}} className="sr-only" />
                 </label>
                 <p className="pl-1">or drag and drop</p>
@@ -732,7 +831,19 @@ const ProjectGallery = () => {
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                     {albumFiles.map((f, idx) => (
                       <div key={idx} className="relative group">
-                        <img src={URL.createObjectURL(f)} alt={f.name} className="w-full h-28 object-cover rounded-lg border border-gray-200 dark:border-gray-600" />
+                        {f.type && f.type.startsWith('video/') ? (
+                          <div className="w-full h-28 rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden bg-black">
+                            <video
+                              src={URL.createObjectURL(f)}
+                              className="w-full h-full object-cover"
+                              muted
+                              loop
+                              playsInline
+                            />
+                          </div>
+                        ) : (
+                          <img src={URL.createObjectURL(f)} alt={f.name} className="w-full h-28 object-cover rounded-lg border border-gray-200 dark:border-gray-600" />
+                        )}
                         <button
                           onClick={() => setAlbumFiles(prev => prev.filter((_, i) => i !== idx))}
                           className="absolute top-1 right-1 bg-red-600 text-white rounded-full px-1 py-0.5 text-[10px] opacity-0 group-hover:opacity-100"
@@ -745,23 +856,83 @@ const ProjectGallery = () => {
                   </div>
                 </>
               )}
+              {albumEditMode && (
+                <div className="mt-6 text-left">
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Existing items in this album</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {galleryItems.filter(i => (i.album_name || 'Uncategorized') === editingAlbumOriginalName).map(i => (
+                      <div key={i.id} className="relative group">
+                        {i.type === 'image' ? (
+                          <img src={i.thumbnail} alt={i.name} className="w-full h-28 object-cover rounded-lg border border-gray-200 dark:border-gray-600" />
+                        ) : (
+                          <div className="w-full h-28 rounded-lg border border-gray-200 dark:border-gray-600 flex items-center justify-center bg-gray-100 dark:bg-gray-700">
+                            <FiVideo className="text-gray-500" />
+                          </div>
+                        )}
+                        <button
+                          onClick={() => confirmDelete(i)}
+                          className="absolute top-1 right-1 bg-red-600 text-white rounded-full px-1 py-0.5 text-[10px] opacity-0 group-hover:opacity-100"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="flex justify-end space-x-3 mt-4">
-              <button type="button" onClick={()=>setShowAlbumModal(false)} className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">Close</button>
-              <button 
-                type="button" 
-                disabled={!albumNameInput.trim() || albumFiles.length === 0}
-                onClick={()=>{ 
-                  const input = document.getElementById('album-file-upload');
-                  const filesToSend = input && input.files && input.files.length > 0 ? Array.from(input.files) : albumFiles;
-                  setAlbum(albumNameInput); 
-                  uploadFiles(filesToSend, albumNameInput, albumTitleInput); 
-                  setShowAlbumModal(false) 
-                }} 
-                className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors ${(!albumNameInput.trim() || albumFiles.length===0) ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
-              >
-                Create Gallery
-              </button>
+            <div className="flex justify-between items-center mt-4">
+              {albumEditMode && (
+                <span className="text-xs text-gray-500 dark:text-gray-400">Editing album: {editingAlbumOriginalName}</span>
+              )}
+              <div className="flex space-x-3">
+                <button type="button" onClick={()=>{ if (!creatingAlbum) setShowAlbumModal(false) }} disabled={creatingAlbum} className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50">Close</button>
+                <button 
+                  type="button" 
+                  disabled={!albumNameInput.trim() || (!albumEditMode && albumFiles.length === 0)}
+                  onClick={async ()=>{ 
+                    if (creatingAlbum) return
+                    setCreatingAlbum(true)
+                    const input = document.getElementById('album-file-upload');
+                    const filesToSend = input && input.files && input.files.length > 0 ? Array.from(input.files) : albumFiles;
+                    setAlbum(albumNameInput);
+                    if (albumEditMode) {
+                      // Rename if changed
+                      if (albumNameInput.trim() !== editingAlbumOriginalName) {
+                        try {
+                          const res = await fetch(`/api/projects/slug/${slug}/gallery`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'renameAlbum', oldAlbumName: editingAlbumOriginalName, newAlbumName: albumNameInput.trim() }) })
+                          const data = await res.json()
+                          if (!res.ok || !data.success) throw new Error(data.error || 'Failed to rename album')
+                          setGalleryItems(prev => prev.map(i => (i.album_name === editingAlbumOriginalName ? { ...i, album_name: albumNameInput.trim() } : i)))
+                          if (album === editingAlbumOriginalName) setAlbum(albumNameInput.trim())
+                        } catch (err) {
+                          toast.error(err.message)
+                          setCreatingAlbum(false)
+                          return
+                        }
+                      }
+                      if (filesToSend && filesToSend.length > 0) {
+                        await uploadFiles(filesToSend, albumNameInput.trim(), albumTitleInput)
+                      }
+                      setShowAlbumModal(false)
+                      setAlbumFiles([])
+                      setAlbumTitleInput('')
+                      setCreatingAlbum(false)
+                    } else {
+                      await uploadFiles(filesToSend, albumNameInput, albumTitleInput)
+                      setShowAlbumModal(false)
+                      setAlbumFiles([])
+                      setAlbumNameInput('')
+                      setAlbumTitleInput('')
+                      setCreatingAlbum(false)
+                      try { window.location.reload() } catch (_) {}
+                    }
+                  }} 
+                  className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors ${(!albumNameInput.trim() || (!albumEditMode && albumFiles.length===0)) ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'} ${creatingAlbum ? 'opacity-75' : ''}`}
+                >
+                  {creatingAlbum ? (albumEditMode ? 'Saving...' : 'Creating...') : (albumEditMode ? 'Save Changes' : 'Create Gallery')}
+                </button>
+              </div>
             </div>
           </div>
         </div>
