@@ -87,7 +87,7 @@ export async function POST(request) {
         debug: {
           bucketError: bucketError,
           supabaseUrl: supabaseUrl,
-          supabaseKeyLength: supabaseKey?.length
+          serviceRoleKeyLength: supabaseServiceKey?.length
         }
       }, { status: 500 })
     }

@@ -5,6 +5,8 @@ import { usePathname, useRouter } from 'next/navigation'
 import SearchBar from './SearchBar'
 import Image from 'next/image'
 import { useAuth } from '../contexts/AuthContext'
+import { ToastContainer } from 'react-toastify'
+import 'react-toastify/dist/ReactToastify.css'
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -55,6 +57,7 @@ const Navbar = () => {
   }
 
   return (
+    <>
     <nav className="bg-white shadow-lg border-b border-gray-200">
       <div className=" mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
@@ -381,6 +384,9 @@ const Navbar = () => {
         </div>
       )}
     </nav>
+    {/* Global Toasts for authenticated pages (kept at bottom) */}
+    <ToastContainer position="bottom-right" autoClose={3000} newestOnTop={false} closeOnClick pauseOnFocusLoss draggable pauseOnHover theme="light" />
+    </>
   )
 }
 

@@ -35,6 +35,13 @@ const LocationMap = ({ location, onLocationChange, className = "" }) => {
         const leafletModule = await import('leaflet')
         const L = leafletModule.default ?? leafletModule
 
+        // Fix marker icon paths (Next.js bundling doesn't serve Leaflet images by default)
+        L.Icon.Default.mergeOptions({
+          iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+          iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+          shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png'
+        })
+
         // Ensure Leaflet CSS is present once
         const cssHref = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
         const hasCss = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).some(l => l.href === cssHref)
@@ -162,6 +169,12 @@ const LocationMap = ({ location, onLocationChange, className = "" }) => {
     const updateMap = async () => {
       try {
         const L = await import('leaflet')
+        // Ensure default marker icons are set (idempotent)
+        ;(L.default ?? L).Icon.Default.mergeOptions({
+          iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+          iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+          shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png'
+        })
         
         // Clear existing marker
         if (markerRef.current) {
@@ -418,7 +431,13 @@ const LocationMap = ({ location, onLocationChange, className = "" }) => {
             }
             
             import('leaflet').then(L => {
-              markerRef.current = L.marker([latitude, longitude]).addTo(mapInstance.current)
+              // Ensure default marker icons are set (idempotent)
+              ;(L.default ?? L).Icon.Default.mergeOptions({
+                iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+                iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+                shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png'
+              })
+              markerRef.current = (L.default ?? L).marker([latitude, longitude]).addTo(mapInstance.current)
               
               const popupContent = `
                 <div class="p-2">

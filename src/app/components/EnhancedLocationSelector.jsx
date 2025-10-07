@@ -1,5 +1,6 @@
 'use client'
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { toast } from 'react-toastify'
 import { FiMapPin, FiSearch, FiChevronDown, FiPlus } from 'react-icons/fi'
 import LocationMap from './LocationMap'
 
@@ -648,6 +649,44 @@ const EnhancedLocationSelector = ({ location, onLocationChange }) => {
     }, 300)
   }
 
+  // Geocode the free-text search and update map/location
+  const triggerGeocodeSearch = useCallback(async () => {
+    const query = (searchTerm || '').trim()
+    if (!query) return
+    try {
+      setLoading(true)
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(query)}&limit=1`)
+      if (!response.ok) throw new Error(`Geocoding failed (${response.status})`)
+      const results = await response.json()
+      if (!Array.isArray(results) || results.length === 0) {
+        toast.error('No matching location found')
+        return
+      }
+      const result = results[0]
+      const address = result.address || {}
+
+      const lat = result.lat?.toString() || ''
+      const lng = result.lon?.toString() || ''
+
+      // Update upstream location; the map will react to this
+      onLocationChange({
+        ...location,
+        country: address.country || location.country || '',
+        region: address.state || address.province || address.region || location.region || '',
+        city: address.city || address.town || address.village || location.city || '',
+        town: address.suburb || address.neighbourhood || address.district || location.town || '',
+        gpsCoordinates: { lat, lng }
+      })
+
+      toast.success('Location updated from search')
+    } catch (err) {
+      console.error('Geocode search error:', err)
+      toast.error('Search failed. Try a more specific place name')
+    } finally {
+      setLoading(false)
+    }
+  }, [searchTerm, onLocationChange, location])
+
   // Toggle dropdown visibility
   const toggleDropdown = (type) => {
     setShowDropdowns(prev => ({
@@ -691,11 +730,19 @@ const EnhancedLocationSelector = ({ location, onLocationChange }) => {
         <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
         <input
           type="text"
-          placeholder="Search for countries, regions, cities, or towns..."
+          placeholder="Type a place and press Enter (e.g., Accra, Ghana)"
           value={searchTerm}
           onChange={handleSearchChange}
-          className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); triggerGeocodeSearch() } }}
+          className="w-full pl-10 pr-24 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
         />
+        <button
+          type="button"
+          onClick={triggerGeocodeSearch}
+          className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1.5 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700"
+        >
+          Search
+        </button>
       </div>
 
       {/* Selected Country Info */}

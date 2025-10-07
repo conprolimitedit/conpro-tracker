@@ -112,8 +112,9 @@ export async function PUT(request, { params }) {
         uploadFormData.append('file', coverImageFile)
         uploadFormData.append('bucket', 'conproProjectsBucket')
         
-        // Upload image using the upload-file API
-        const uploadResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/upload-file`, {
+        // Upload image using the upload-file API (derive base URL from incoming request)
+        const baseUrl = new URL(request.url).origin
+        const uploadResponse = await fetch(`${baseUrl}/api/upload-file`, {
           method: 'POST',
           body: uploadFormData
         })
