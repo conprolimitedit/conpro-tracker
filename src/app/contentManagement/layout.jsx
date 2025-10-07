@@ -27,7 +27,7 @@ const ContentLayout = ({ children }) => {
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-4">
               <Link 
-                href="/dashboard"
+                href="/"
                 className="flex items-center space-x-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
               >
                 <FiHome className="w-5 h-5" />
@@ -47,7 +47,7 @@ const ContentLayout = ({ children }) => {
                 </div>
               </div>
               <Link
-                href="/dashboard"
+                href="/"
                 className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
               >
                 <FiArrowLeft className="w-4 h-4" />

@@ -16,11 +16,11 @@ const FinanceDocumentsPage = () => {
       const user = stored ? JSON.parse(stored) : null
       const role = user?.role
       if (!role || (role !== 'admin' && role !== 'finance')) {
-        router.replace('/dashboard')
+        router.replace('/')
         return
       }
     } catch (_) {
-      router.replace('/dashboard')
+      router.replace('/')
       return
     }
   }, [router])

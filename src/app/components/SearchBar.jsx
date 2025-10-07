@@ -137,7 +137,7 @@ const SearchBar = ({ placeholder = "Search projects, contractors, clients...", o
               searchResults.map((project) => (
                 <Link
                   key={project.project_id}
-                  href={`/projects/${project.project_slug}`}
+                  href={`/projects/${project.project_slug}/overview`}
                   className="block w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none border-b border-gray-100 last:border-b-0"
                   onClick={() => {
                     setShowResults(false)

@@ -28,7 +28,9 @@ const ProjectOverviewPage = () => {
       region: '',
       city: '',
       town: '',
-      gpsCoordinates: { lat: '', lng: '' }
+      gpsCoordinates: { lat: '', lng: '' },
+      address: '',
+      additional_info: ''
     },
     clients: [],
     fundingAgencies: [],
@@ -46,7 +48,11 @@ const ProjectOverviewPage = () => {
     projectManagers: [], // Added project managers
     projectCoordinators: [], // Added project coordinators
     handingOverDate: '',
-    phaseDeadline: '',
+    contractDate: '',
+    plannedProgress: '',
+    cumulativeProgress: '',
+    sitePossessionDate: '',
+    duration: '',
     specialComments: '',
     linkedProjects: [] // Added linkedProjects state
   })
@@ -180,7 +186,9 @@ const ProjectOverviewPage = () => {
           region: project.project_location?.region || '',
           city: project.project_location?.city || '',
           town: project.project_location?.town || '',
-          gpsCoordinates: project.project_location?.gpsCoordinates || { lat: '', lng: '' }
+          gpsCoordinates: project.project_location?.gpsCoordinates || { lat: '', lng: '' },
+          address: project.project_location?.address || '',
+          additional_info: project.project_location?.additional_info || ''
         },
         clients: project.project_clients || [],
         fundingAgencies: project.funding_agencies || [],
@@ -198,7 +206,11 @@ const ProjectOverviewPage = () => {
         projectManagers: project.project_managers || [],
         projectCoordinators: project.project_coordinators || [],
         handingOverDate: project.handing_over_date || '',
-        phaseDeadline: project.project_deadline || '',
+        contractDate: project.contract_date || '',
+        plannedProgress: (project.planned_progress ?? '')?.toString(),
+        cumulativeProgress: (project.cumulative_progress ?? '')?.toString(),
+        sitePossessionDate: project.site_possession_date || '',
+        duration: project.project_duration || '',
         specialComments: project.project_special_comment || '',
         linkedProjects: project.linked_projects || [],
         revisedDate: project.revised_date || ''
@@ -208,7 +220,7 @@ const ProjectOverviewPage = () => {
       setFormData(transformedData)
     } catch (error) {
       console.error('❌ Error fetching project:', error)
-      alert(`Error loading project: ${error.message}`)
+      toast.error(`Error loading project: ${error.message}`)
     } finally {
       setLoading(false)
     }
@@ -243,13 +255,13 @@ const ProjectOverviewPage = () => {
     if (file) {
       // Validate file type
       if (!file.type.startsWith('image/')) {
-        alert('Please select an image file.')
+        toast.error('Please select an image file.')
         return
       }
       
       // Validate file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
-        alert('File size must be less than 5MB.')
+        toast.error('File size must be less than 5MB.')
         return
       }
       
@@ -346,13 +358,13 @@ const ProjectOverviewPage = () => {
       const missingLocationFields = locationFields.filter(field => !formData.location[field])
       
       if (missingFields.length > 0) {
-        alert(`Please fill in required fields: ${missingFields.join(', ')}`)
+        toast.error(`Please fill in required fields: ${missingFields.join(', ')}`)
         setSaving(false)
         return
       }
       
       if (missingLocationFields.length > 0) {
-        alert(`Please fill in required location fields: ${missingLocationFields.join(', ')}`)
+        toast.error(`Please fill in required location fields: ${missingLocationFields.join(', ')}`)
         setSaving(false)
         return
       }
@@ -363,14 +375,16 @@ const ProjectOverviewPage = () => {
         region: formData.location.region,
         city: formData.location.city,
         town: formData.location.town,
-        gpsCoordinates: formData.location.gpsCoordinates
+        gpsCoordinates: formData.location.gpsCoordinates,
+        address: formData.location.address,
+        additional_info: formData.location.additional_info
       }
       
       // Prepare data for API - using IDs for all multi-select fields
       const projectData = {
         project_name: formData.projectName,
         project_slug: formData.slug,
-        project_deadline: formData.phaseDeadline,
+        contract_date: formData.contractDate,
         project_priority: formData.projectPriority,
         // project_cover_image will be handled separately in FormData
         project_location: locationData,
@@ -385,12 +399,16 @@ const ProjectOverviewPage = () => {
         project_status: formData.projectStatus,
         project_start_date: formData.projectStartDate,
         project_end_date: formData.projectCompletionDate,
+        site_possession_date: formData.sitePossessionDate,
         handing_over_date: formData.handingOverDate,
         revised_date: formData.revisedDate,
         linked_projects: formData.linkedProjects.map(project => project.id || project), // Use ID
         project_description: formData.projectDescription,
         project_details: formData.projectDetails,
         project_special_comment: formData.specialComments,
+        planned_progress: formData.plannedProgress ? parseFloat(formData.plannedProgress) : 0,
+        cumulative_progress: formData.cumulativeProgress ? parseFloat(formData.cumulativeProgress) : 0,
+        project_duration: formData.duration,
         project_completion_percentage: 0 // Start at 0%
       }
       
@@ -427,7 +445,7 @@ const ProjectOverviewPage = () => {
       }
       
       // Show success message
-      alert(isNewProject ? 'Project created successfully!' : 'Project updated successfully!')
+      toast.success(isNewProject ? 'Project created successfully!' : 'Project updated successfully!')
       
       // Redirect to project page if it's a new project
       if (isNewProject && result.project) {
@@ -436,7 +454,7 @@ const ProjectOverviewPage = () => {
       
     } catch (error) {
       console.error('❌ Error saving project:', error)
-      alert(`Error saving project: ${error.message}`)
+      toast.error(`Error saving project: ${error.message}`)
     } finally {
       setSaving(false)
     }
@@ -501,18 +519,18 @@ const ProjectOverviewPage = () => {
                  />
                </div>
 
-               <div>
-                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                   Project Deadline
-                 </label>
-                 <input
-                   type="date"
-                   name="phaseDeadline"
-                   value={formData.phaseDeadline}
-                   onChange={handleInputChange}
-                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                 />
-               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Contract Date
+                </label>
+                <input
+                  type="date"
+                  name="contractDate"
+                  value={formData.contractDate}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                />
+              </div>
 
                <div>
                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -622,6 +640,35 @@ const ProjectOverviewPage = () => {
               location={formData.location}
               onLocationChange={handleLocationChange}
             />
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Address
+                </label>
+                <input
+                  type="text"
+                  name="address"
+                  value={formData.location.address}
+                  onChange={(e) => handleLocationChange({ ...formData.location, address: e.target.value })}
+                  placeholder="GPS or physical address"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Additional Info
+                </label>
+                <input
+                  type="text"
+                  name="additional_info"
+                  value={formData.location.additional_info}
+                  onChange={(e) => handleLocationChange({ ...formData.location, additional_info: e.target.value })}
+                  placeholder="Any notes about this location"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                />
+              </div>
+            </div>
           </div>
 
           {/* Stakeholders Section */}
@@ -755,6 +802,20 @@ const ProjectOverviewPage = () => {
                 />
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Duration (text)
+                </label>
+                <input
+                  type="text"
+                  name="duration"
+                  value={formData.duration}
+                  onChange={handleInputChange}
+                  placeholder="e.g., 12 months"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                />
+              </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Project Status
@@ -770,6 +831,8 @@ const ProjectOverviewPage = () => {
                     <option value="in-progress">In Progress</option>
                     <option value="completed">Completed</option>
                     <option value="on-hold">On Hold</option>
+                    <option value="on-hold">Terminated</option>
+                    <option value="on-hold">Abandoned</option>
                     <option value="cancelled">Cancelled</option>
                   </select>
               </div>
@@ -804,6 +867,19 @@ const ProjectOverviewPage = () => {
                   type="date"
                   name="projectCompletionDate"
                   value={formData.projectCompletionDate}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Site Possession Date
+                </label>
+                <input
+                  type="date"
+                  name="sitePossessionDate"
+                  value={formData.sitePossessionDate}
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 />
@@ -864,6 +940,40 @@ const ProjectOverviewPage = () => {
               Description & Comments
             </h5>
             <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Planned Progress (%)
+                  </label>
+                  <input
+                    type="number"
+                    name="plannedProgress"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={formData.plannedProgress}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Cumulative Progress (%)
+                  </label>
+                  <input
+                    type="number"
+                    name="cumulativeProgress"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={formData.cumulativeProgress}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  />
+                </div>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Project Description
@@ -928,6 +1038,21 @@ const ProjectOverviewPage = () => {
           </div>
         </div>
       )}
+      {/* Fullscreen Saving Overlay */}
+      {saving && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1200]">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-8 w-full max-w-md mx-4 text-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mx-auto mb-4"></div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              {isNewProject ? 'Creating Project...' : 'Updating Project...'}
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Please wait while your changes are being saved
+            </p>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }

@@ -155,28 +155,7 @@ const ProjectDashboardFixed = () => {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  // Calculate completion percentage based on phase metadata
-  const calculateCompletionPercentage = (project) => {
-    if (!project.meta_data || !project.meta_data.phases) {
-      return 0
-    }
-
-    const phases = project.meta_data.phases
-    const totalPhases = Object.keys(phases).length
-    let completedPhases = 0
-    let inProgressPhases = 0
-
-    Object.values(phases).forEach(phase => {
-      if (phase.phase_status === 'completed') {
-        completedPhases++
-      } else if (phase.phase_status === 'uncompleted') {
-        inProgressPhases++
-      }
-    })
-
-    const totalPercentage = ((completedPhases + (inProgressPhases * 0.5)) / totalPhases) * 100
-    return Math.round(totalPercentage)
-  }
+  // Removed legacy phase-based progress calculation; using cumulative_progress and planned_progress instead
 
   const calculateDuration = (project) => {
     if (!project.project_start_date || !project.project_end_date) {
@@ -197,12 +176,31 @@ const ProjectDashboardFixed = () => {
     return `${days} days`
   }
 
+  const displayDuration = (project) => {
+    if (project.project_duration && typeof project.project_duration === 'string' && project.project_duration.trim() !== '') {
+      return project.project_duration
+    }
+    return calculateDuration(project)
+  }
+
+  const getProgress = (project) => {
+    const toPct = (value) => {
+      const n = Number(value)
+      if (!Number.isFinite(n)) return 0
+      return Math.max(0, Math.min(100, n))
+    }
+    return {
+      planned: toPct(project.planned_progress),
+      cumulative: toPct(project.cumulative_progress)
+    }
+  }
+
   const calculateRemainingDays = (project) => {
-    if (!project.project_deadline) {
-      return 'No deadline'
+    if (!project.contract_date) {
+      return 'No contract date'
     }
     
-    const end = new Date(project.project_deadline)
+    const end = new Date(project.contract_date)
     const now = new Date()
     const diffTime = end - now
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
@@ -836,8 +834,10 @@ const ProjectDashboardFixed = () => {
               <div className="flex-1 p-6">
                 <div className="flex flex-wrap gap-4">
                   {displayedProjects.map((project) => {
-                    const completionPercentage = calculateCompletionPercentage(project)
-                    const duration = calculateDuration(project)
+                    const { planned, cumulative } = getProgress(project)
+                    const progressActual = cumulative
+                    const progressPlanned = planned
+                    const duration = displayDuration(project)
                     const remainingDays = calculateRemainingDays(project)
                     const isExpanded = expandedProject === project.project_id
                     
@@ -874,18 +874,30 @@ const ProjectDashboardFixed = () => {
                           </div>
                         </div>
 
-                        {/* Progress Bar */}
+                        {/* Progress - Actual vs Planned */}
                         <div className="mb-3">
                           <div className="flex justify-between items-center mb-1">
-                            <span className="!text-sm text-gray-600 dark:text-gray-400">Progress</span>
+                            <span className="!text-sm text-gray-600 dark:text-gray-400">Cumulative Progress</span>
                             <span className="!text-sm font-medium text-gray-900 dark:text-white">
-                              {completionPercentage}% completed
+                              {Math.round(progressActual)}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2 mb-2">
+                            <div
+                              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                              style={{ width: `${progressActual}%` }}
+                            ></div>
+                          </div>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="!text-sm text-gray-600 dark:text-gray-400">Planned Progress</span>
+                            <span className="!text-sm font-medium text-gray-900 dark:text-white">
+                              {Math.round(progressPlanned)}%
                             </span>
                           </div>
                           <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
                             <div
-                              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                              style={{ width: `${completionPercentage}%` }}
+                              className="bg-purple-600 h-2 rounded-full transition-all duration-300"
+                              style={{ width: `${progressPlanned}%` }}
                             ></div>
                           </div>
                         </div>
@@ -978,9 +990,27 @@ const ProjectDashboardFixed = () => {
                                 </p>
                               </div>
                               <div>
-                                <p className="text-gray-500 dark:text-gray-400 mb-1 !text-sm">Deadline</p>
+                                <p className="text-gray-500 dark:text-gray-400 mb-1 !text-sm">Contract Date</p>
                                 <p className="font-medium text-gray-900 dark:text-white !text-sm">
-                                  {project.project_deadline ? new Date(project.project_deadline).toLocaleDateString() : 'TBD'}
+                                  {project.contract_date ? new Date(project.contract_date).toLocaleDateString() : 'TBD'}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-gray-500 dark:text-gray-400 mb-1 !text-sm">Site Possession</p>
+                                <p className="font-medium text-gray-900 dark:text-white !text-sm">
+                                  {project.site_possession_date ? new Date(project.site_possession_date).toLocaleDateString() : 'TBD'}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-gray-500 dark:text-gray-400 mb-1 !text-sm">Planned Progress</p>
+                                <p className="font-medium text-gray-900 dark:text-white !text-sm">
+                                  {progressPlanned !== null ? `${progressPlanned}%` : 'N/A'}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-gray-500 dark:text-gray-400 mb-1 !text-sm">Cumulative Progress</p>
+                                <p className="font-medium text-gray-900 dark:text-white !text-sm">
+                                  {progressActual}%
                                 </p>
                               </div>
                             </div>
@@ -988,9 +1018,9 @@ const ProjectDashboardFixed = () => {
                             {/* Additional Stakeholders */}
                             <div className="space-y-2">
                               <h6 className="!text-sm font-medium text-gray-700 dark:text-gray-300">Stakeholders</h6>
-                              <div className="space-y-2">
+                              <div className="flex flex-wrap gap-4">
                                 {project.contractors && project.contractors.length > 0 && (
-                                  <div>
+                                  <div className="min-w-[220px] flex-1">
                                     <p className="!text-sm text-gray-500 dark:text-gray-400 mb-1">Contractors</p>
                                     <div className="flex flex-wrap gap-1">
                                       {getNamesFromStakeholders(project.contractors, 'fullName').map((contractor, index) => (
@@ -1002,7 +1032,7 @@ const ProjectDashboardFixed = () => {
                                   </div>
                                 )}
                                 {project.clerk_of_works && project.clerk_of_works.length > 0 && (
-                                  <div>
+                                  <div className="min-w-[220px] flex-1">
                                     <p className="!text-sm text-gray-500 dark:text-gray-400 mb-1">Clerk of Works</p>
                                     <div className="flex flex-wrap gap-1">
                                       {getNamesFromStakeholders(project.clerk_of_works, 'fullName').map((clerk, index) => (
@@ -1014,7 +1044,7 @@ const ProjectDashboardFixed = () => {
                                   </div>
                                 )}
                                 {project.project_coordinators && project.project_coordinators.length > 0 && (
-                                  <div>
+                                  <div className="min-w-[220px] flex-1">
                                     <p className="!text-sm text-gray-500 dark:text-gray-400 mb-1">Coordinators</p>
                                     <div className="flex flex-wrap gap-1">
                                       {getNamesFromStakeholders(project.project_coordinators, 'fullName').map((coordinator, index) => (
@@ -1043,10 +1073,10 @@ const ProjectDashboardFixed = () => {
                           </div>
                         )}
 
-                        {/* Remaining Days */}
+                      {/* Remaining Days */}
                         <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
                           <div className="flex justify-between items-center">
-                            <span className="!text-sm text-gray-500 dark:text-gray-400">Remaining Days</span>
+                          <span className="!text-sm text-gray-500 dark:text-gray-400">Days Until Contract Date</span>
                             <span className={`!text-sm font-medium ${
                               remainingDays === 'Overdue' ? 'text-red-600' :
                               remainingDays === 'Due today' ? 'text-yellow-600' :
@@ -1159,8 +1189,10 @@ const ProjectDashboardFixed = () => {
               
               <div className="space-y-4">
                 {displayedProjects.map((project) => {
-                  const completionPercentage = calculateCompletionPercentage(project)
-                  const duration = calculateDuration(project)
+                  const { planned, cumulative } = getProgress(project)
+                  const progressActual = cumulative
+                  const progressPlanned = planned
+                  const duration = displayDuration(project)
                   const remainingDays = calculateRemainingDays(project)
                   const isExpanded = expandedProject === project.project_id
                   
@@ -1198,18 +1230,30 @@ const ProjectDashboardFixed = () => {
                         </div>
                       </div>
 
-                      {/* Progress Bar */}
+                      {/* Progress - Actual vs Planned */}
                       <div className="mb-3">
                         <div className="flex justify-between items-center mb-1">
-                          <span className="text-xs text-gray-600 dark:text-gray-400">Progress</span>
+                          <span className="text-xs text-gray-600 dark:text-gray-400">Cumulative Progress</span>
                           <span className="text-xs font-medium text-gray-900 dark:text-white">
-                            {completionPercentage}% completed
+                            {Math.round(progressActual)}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2 mb-2">
+                          <div
+                            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${progressActual}%` }}
+                          ></div>
+                        </div>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-xs text-gray-600 dark:text-gray-400">Planned Progress</span>
+                          <span className="text-xs font-medium text-gray-900 dark:text-white">
+                            {Math.round(progressPlanned)}%
                           </span>
                         </div>
                         <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
                           <div
-                            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                            style={{ width: `${completionPercentage}%` }}
+                            className="bg-purple-600 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${progressPlanned}%` }}
                           ></div>
                         </div>
                       </div>
@@ -1285,7 +1329,7 @@ const ProjectDashboardFixed = () => {
                       {/* Remaining Days */}
                       <div className="mt-3 pt-2 border-t border-gray-200 dark:border-gray-600">
                         <div className="flex justify-between items-center">
-                          <span className="text-xs text-gray-500 dark:text-gray-400">Remaining Days</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">Days Until Contract Date</span>
                           <span className={`text-xs font-medium ${
                             remainingDays === 'Overdue' ? 'text-red-600' :
                             remainingDays === 'Due today' ? 'text-yellow-600' :

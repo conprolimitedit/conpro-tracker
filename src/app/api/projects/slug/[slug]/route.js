@@ -65,6 +65,7 @@ export async function PUT(request, { params }) {
     // Check if request is FormData or JSON
     const contentType = request.headers.get('content-type')
     let body, coverImageFile = null
+    let oldCoverPathToDelete = null
     
     if (contentType && contentType.includes('multipart/form-data')) {
       // Handle FormData request
@@ -86,6 +87,18 @@ export async function PUT(request, { params }) {
       // Handle JSON request
       body = await request.json()
       console.log('📝 Project data received (JSON):', body)
+    }
+    
+    // Fetch existing project to know current cover image path (for cleanup if replaced)
+    try {
+      const { data: existingProject } = await supabase
+        .from('projects')
+        .select('project_cover_image')
+        .eq('project_slug', slug)
+        .single()
+      oldCoverPathToDelete = existingProject?.project_cover_image?.path || null
+    } catch (fetchOldErr) {
+      console.warn('⚠️ Could not fetch existing project for cover cleanup:', fetchOldErr?.message)
     }
     
     // Handle image upload if cover image file is provided
@@ -121,6 +134,22 @@ export async function PUT(request, { params }) {
             path: uploadResult.fileData.path
           }
           console.log('✅ Image uploaded successfully:', coverImageData)
+          // Attempt to delete previous cover image if different
+          try {
+            if (oldCoverPathToDelete && oldCoverPathToDelete !== coverImageData.path) {
+              const { error: removeErr } = await supabase
+                .storage
+                .from('conproProjectsBucket')
+                .remove([oldCoverPathToDelete])
+              if (removeErr) {
+                console.warn('⚠️ Failed to delete old cover image:', oldCoverPathToDelete, removeErr.message)
+              } else {
+                console.log('🧹 Deleted old cover image:', oldCoverPathToDelete)
+              }
+            }
+          } catch (cleanupErr) {
+            console.warn('⚠️ Error during old cover cleanup:', cleanupErr?.message)
+          }
         } else {
           throw new Error(uploadResult.error || 'Image upload failed')
         }
@@ -150,7 +179,6 @@ export async function PUT(request, { params }) {
     const updateData = {
       project_name: body.project_name,
       project_slug: body.project_slug,
-      project_deadline: formatDateField(body.project_deadline),
       project_priority: body.project_priority || 'medium',
       project_cover_image: coverImageData || body.project_cover_image || null,
       project_location: body.project_location || null,
@@ -165,6 +193,8 @@ export async function PUT(request, { params }) {
       project_status: body.project_status || 'planning',
       project_start_date: formatDateField(body.project_start_date),
       project_end_date: formatDateField(body.project_end_date),
+      contract_date: formatDateField(body.contract_date),
+      site_possession_date: formatDateField(body.site_possession_date),
       handing_over_date: formatDateField(body.handing_over_date),
       revised_date: formatDateField(body.revised_date),
       linked_projects: body.linked_projects || [],
@@ -172,6 +202,9 @@ export async function PUT(request, { params }) {
       project_details: body.project_details || '',
       project_special_comment: body.project_special_comment || '',
       project_completion_percentage: body.project_completion_percentage || 0,
+      planned_progress: typeof body.planned_progress === 'number' ? body.planned_progress : 0,
+      cumulative_progress: typeof body.cumulative_progress === 'number' ? body.cumulative_progress : 0,
+      project_duration: body.project_duration || '',
       updated_at: new Date().toISOString()
     }
     
@@ -223,6 +256,17 @@ export async function DELETE(request, { params }) {
     const { slug } = params
     console.log('🚀 Deleting project by slug:', slug)
     
+    // Fetch cover image path before deletion
+    let coverPath = null
+    try {
+      const { data: existing } = await supabase
+        .from('projects')
+        .select('project_cover_image')
+        .eq('project_slug', slug)
+        .single()
+      coverPath = existing?.project_cover_image?.path || null
+    } catch {}
+
     const { data: deletedProject, error } = await supabase
       .from('projects')
       .delete()
@@ -247,6 +291,19 @@ export async function DELETE(request, { params }) {
 
     console.log('✅ Project deleted successfully by slug:', deletedProject[0].project_name)
     
+    // Attempt to delete cover image from storage (best-effort)
+    try {
+      if (coverPath) {
+        const { error: removeErr } = await supabase
+          .storage
+          .from('conproProjectsBucket')
+          .remove([coverPath])
+        if (removeErr) {
+          console.warn('⚠️ Failed to delete cover image on project delete:', coverPath, removeErr.message)
+        }
+      }
+    } catch {}
+
     return NextResponse.json({
       success: true,
       message: 'Project deleted successfully',

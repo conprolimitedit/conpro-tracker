@@ -14,14 +14,19 @@ export async function GET(request, { params }) {
     const page = parseInt(searchParams.get('page')) || 1
     const limit = parseInt(searchParams.get('limit')) || 10
     const offset = (page - 1) * limit
+    const album = searchParams.get('album') || null
 
     console.log(`🚀 Fetching gallery items for project slug: ${slug}, page: ${page}, limit: ${limit}`)
 
     // Get total count
-    const { count, error: countError } = await supabase
+    let countQuery = supabase
       .from('project_gallery')
       .select('*', { count: 'exact', head: true })
       .eq('project_slug', slug)
+    if (album && album.trim() !== '') {
+      countQuery = countQuery.eq('album_name', album)
+    }
+    const { count, error: countError } = await countQuery
 
     if (countError) {
       console.error('❌ Count error:', countError)
@@ -33,10 +38,14 @@ export async function GET(request, { params }) {
     }
 
     // Get paginated items
-    const { data: galleryItems, error } = await supabase
+    let listQuery = supabase
       .from('project_gallery')
       .select('*')
       .eq('project_slug', slug)
+    if (album && album.trim() !== '') {
+      listQuery = listQuery.eq('album_name', album)
+    }
+    const { data: galleryItems, error } = await listQuery
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
 
@@ -92,6 +101,7 @@ export async function POST(request, { params }) {
     const files = formData.getAll('files')
     const descriptions = formData.getAll('descriptions') || []
     const comments = formData.getAll('comments') || []
+    const album = (formData.get('album') || '').toString()
 
     if (!files || files.length === 0) {
       return NextResponse.json({
@@ -180,12 +190,13 @@ export async function POST(request, { params }) {
         }
 
          // Save to database
-         const { data: dbData, error: dbError } = await supabase
+        const { data: dbData, error: dbError } = await supabase
            .from('project_gallery')
            .insert({
              project_id: project.project_id,
              project_slug: slug,
-             file_data: fileData
+            file_data: fileData,
+            album_name: album || null
            })
            .select()
            .single()
@@ -306,5 +317,57 @@ export async function DELETE(request, { params }) {
       error: 'Internal server error',
       details: error.message
     }, { status: 500 })
+  }
+}
+
+// PUT /api/projects/slug/[slug]/gallery - Update album name or single item fields
+export async function PUT(request, { params }) {
+  try {
+    const { slug } = params
+    const body = await request.json()
+    const { action, oldAlbumName, newAlbumName, itemId, fields } = body || {}
+
+    if (action === 'renameAlbum') {
+      if (!oldAlbumName || !newAlbumName) {
+        return NextResponse.json({ success: false, error: 'oldAlbumName and newAlbumName are required' }, { status: 400 })
+      }
+      const { error } = await supabase
+        .from('project_gallery')
+        .update({ album_name: newAlbumName })
+        .eq('project_slug', slug)
+        .eq('album_name', oldAlbumName)
+      if (error) {
+        return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+      }
+      return NextResponse.json({ success: true, message: 'Album renamed successfully' })
+    }
+
+    if (action === 'updateItem') {
+      if (!itemId || !fields || typeof fields !== 'object') {
+        return NextResponse.json({ success: false, error: 'itemId and fields are required' }, { status: 400 })
+      }
+      const allowed = ['album_name', 'file_data']
+      const updatePayload = {}
+      for (const k of Object.keys(fields)) {
+        if (allowed.includes(k)) updatePayload[k] = fields[k]
+      }
+      if (Object.keys(updatePayload).length === 0) {
+        return NextResponse.json({ success: false, error: 'No valid fields to update' }, { status: 400 })
+      }
+      const { error } = await supabase
+        .from('project_gallery')
+        .update(updatePayload)
+        .eq('id', itemId)
+        .eq('project_slug', slug)
+      if (error) {
+        return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+      }
+      return NextResponse.json({ success: true, message: 'Item updated successfully' })
+    }
+
+    return NextResponse.json({ success: false, error: 'Unsupported action' }, { status: 400 })
+  } catch (error) {
+    console.error('💥 Update gallery error:', error)
+    return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
   }
 }

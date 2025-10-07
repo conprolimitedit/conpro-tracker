@@ -130,7 +130,7 @@ const ContentSidebar = () => {
         <div className="p-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center space-x-3">
             <Link 
-              href="/dashboard"
+              href="/"
               className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
             >
               <FiArrowLeft className="w-5 h-5" />

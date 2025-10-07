@@ -1,5 +1,6 @@
 'use client'
-import ProjectDashboard from '../components/Dashboard/ProjectDashboard.jsx'
+// import ProjectDashboard from '../components//ProjectDashboard.jsx'
+
 import ProjectDashboardFixed from '../components/Dashboard/ProjectDashboardFixed.jsx'
 import ProjectDataSummary from '../components/Projects/ProjectDataSummary.jsx'
 const ProjectsPage = () => {

@@ -213,7 +213,7 @@ const ProjectNav = () => {
   return (
     <>
       {/* Mobile Menu Button */}
-      <div className="md:hidden fixed top-20 right-4 z-[60]">
+      <div className="md:hidden fixed top-20 right-4 z-[2]">
         <button
           onClick={toggleMobileMenu}
           className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md p-2 shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"

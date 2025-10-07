@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken'
 
 export function middleware(request) {
   // Define protected routes
-  const protectedRoutes = ['/dashboard', '/projects', '/contentManagement', '/users']
+  const protectedRoutes = ['/', '/projects', '/contentManagement', '/users']
   const isProtectedRoute = protectedRoutes.some(route => 
     request.nextUrl.pathname.startsWith(route)
   )
@@ -38,7 +38,7 @@ export function middleware(request) {
 
 export const config = {
   matcher: [
-    '/dashboard/:path*',
+    '//:path*',
     '/projects/:path*',
     '/contentManagement/:path*',
     '/users/:path*'

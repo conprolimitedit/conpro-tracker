@@ -8,15 +8,25 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SERVICE_ROLE_KEY
 )
 
-// GET /api/projects - Get all projects
-export async function GET() {
+// GET /api/projects - Get all projects (paginated)
+export async function GET(request) {
   try {
     console.log('🚀 Fetching all projects...')
-    
+
+    // Read pagination params
+    const { searchParams } = new URL(request.url)
+    const pageParam = parseInt(searchParams.get('page') || '1', 10)
+    const limitParam = parseInt(searchParams.get('limit') || '10', 10)
+    const page = Number.isNaN(pageParam) || pageParam < 1 ? 1 : pageParam
+    const limit = Number.isNaN(limitParam) || limitParam < 1 ? 10 : limitParam
+    const from = (page - 1) * limit
+    const to = from + limit - 1
+
     const { data: projects, error } = await supabase
       .from('projects')
       .select('*')
       .order('created_at', { ascending: false })
+      .range(from, to)
 
     if (error) {
       console.error('❌ Database error:', error)
@@ -164,7 +174,6 @@ export async function POST(request) {
     const projectData = {
       project_name: body.project_name,
       project_slug: body.project_slug,
-      project_deadline: formatDateField(body.project_deadline),
       project_priority: body.project_priority || 'medium',
       project_cover_image: coverImageData || {},
       project_location: body.project_location || {},
@@ -179,13 +188,18 @@ export async function POST(request) {
       project_status: body.project_status || 'planning',
       project_start_date: formatDateField(body.project_start_date),
       project_end_date: formatDateField(body.project_end_date),
+      contract_date: formatDateField(body.contract_date),
+      site_possession_date: formatDateField(body.site_possession_date),
       handing_over_date: formatDateField(body.handing_over_date),
       revised_date: formatDateField(body.revised_date),
       linked_projects: body.linked_projects || [],
       project_description: body.project_description || '',
       project_details: body.project_details || '',
       project_special_comment: body.project_special_comment || '',
-      project_completion_percentage: body.project_completion_percentage || 0
+      project_completion_percentage: body.project_completion_percentage || 0,
+      planned_progress: typeof body.planned_progress === 'number' ? body.planned_progress : 0,
+      cumulative_progress: typeof body.cumulative_progress === 'number' ? body.cumulative_progress : 0,
+      project_duration: body.project_duration || ''
     }
     
     console.log('📝 Prepared project data:', projectData)

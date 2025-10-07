@@ -628,7 +628,7 @@ const FileUpload = ({
     if (!saving) return null
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1200]">
         <div className="bg-white relative dark:bg-gray-800 rounded-xl shadow-xl p-8 w-full max-w-md mx-4">
           <div className="text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mx-auto mb-4"></div>
@@ -678,7 +678,7 @@ const FileUpload = ({
     if (!showDeleteModal || !fileToDelete) return null
 
     return (
-      <div className="fixed inset-0 flex items-center justify-center z-50">
+      <div className="fixed inset-0 flex items-center justify-center z-[1200]">
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
           <div className="text-center">
             <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 dark:bg-red-900 mb-4">
@@ -1231,7 +1231,7 @@ const FileUpload = ({
 
       {/* File Upload Modal */}
       {showFileUploadModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1200]">
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
             <div className="flex justify-between items-center mb-2">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -1292,7 +1292,7 @@ const FileUpload = ({
 
       {/* Link Modal */}
       {showLinkModal && (
-        <div className="fixed   inset-0 bg-black/30 flex items-center justify-center z-50">
+        <div className="fixed   inset-0 bg-black/30 flex items-center justify-center z-[1200]">
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-2xl mx-4 max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-2">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
