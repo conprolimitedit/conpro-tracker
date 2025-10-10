@@ -34,7 +34,8 @@ const BuildingTypesPage = () => {
 
   const fields = [
     { name: 'buildingType', label: 'Building Type', required: true, placeholder: 'Enter building type name' },
-    { name: 'category', label: 'Category', required: true, placeholder: 'e.g., Housing, Business, Healthcare' }
+    { name: 'category', label: 'Category', required: true, placeholder: 'e.g., Housing, Business, Healthcare' },
+    { name: 'code', label: 'Code', required: false, placeholder: 'Optional code (e.g., BT-001)' }
   ]
 
   const handleSave = async (buildingTypeData, id = null) => {

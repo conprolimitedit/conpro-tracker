@@ -37,6 +37,7 @@ const ProjectDashboardFixed = () => {
   const [clerkOfWorkFilter, setClerkOfWorkFilter] = useState('all')
   const [projectServiceFilter, setProjectServiceFilter] = useState('all')
   const [buildingTypeFilter, setBuildingTypeFilter] = useState('all')
+  const [projectTypeFilter, setProjectTypeFilter] = useState('all')
   const [regionFilter, setRegionFilter] = useState('all')
   const [cityFilter, setCityFilter] = useState('all')
   const [townFilter, setTownFilter] = useState('all')
@@ -51,6 +52,17 @@ const ProjectDashboardFixed = () => {
     stakeholders: false,
     projectDetails: false
   })
+
+  // Content options fetched from database for dropdowns
+  const [clientsOptions, setClientsOptions] = useState([])
+  const [contractorsOptions, setContractorsOptions] = useState([])
+  const [clerkOfWorksOptions, setClerkOfWorksOptions] = useState([])
+  const [fundingAgenciesOptions, setFundingAgenciesOptions] = useState([])
+  const [projectManagersOptions, setProjectManagersOptions] = useState([])
+  const [projectCoordinatorsOptions, setProjectCoordinatorsOptions] = useState([])
+  const [buildingTypesOptions, setBuildingTypesOptions] = useState([])
+  const [projectTypesOptions, setProjectTypesOptions] = useState([])
+  const [servicesOptions, setServicesOptions] = useState([])
 
 
   // Extract unique locations from projects
@@ -140,6 +152,70 @@ const ProjectDashboardFixed = () => {
   // Initial data fetch
   useEffect(() => {
     fetchProjects(1, true)
+  }, [])
+
+  // Fetch content options for dropdowns
+  useEffect(() => {
+    const fetchContentOptions = async () => {
+      try {
+        const [
+          clientsRes,
+          contractorsRes,
+          buildingTypesRes,
+          projectTypesRes,
+          servicesRes,
+          clerkOfWorksRes,
+          fundingAgenciesRes,
+          projectManagersRes,
+          projectCoordinatorsRes
+        ] = await Promise.all([
+          fetch('/api/clients'),
+          fetch('/api/contractors'),
+          fetch('/api/building-types'),
+          fetch('/api/project-types'),
+          fetch('/api/services'),
+          fetch('/api/clerk-of-works'),
+          fetch('/api/funding-agencies'),
+          fetch('/api/project-managers'),
+          fetch('/api/project-coordinators')
+        ])
+
+        const [
+          clientsData,
+          contractorsData,
+          buildingTypesData,
+          projectTypesData,
+          servicesData,
+          clerkOfWorksData,
+          fundingAgenciesData,
+          projectManagersData,
+          projectCoordinatorsData
+        ] = await Promise.all([
+          clientsRes.json(),
+          contractorsRes.json(),
+          buildingTypesRes.json(),
+          projectTypesRes.json(),
+          servicesRes.json(),
+          clerkOfWorksRes.json(),
+          fundingAgenciesRes.json(),
+          projectManagersRes.json(),
+          projectCoordinatorsRes.json()
+        ])
+
+        if (clientsData?.success) setClientsOptions(clientsData.clients || [])
+        if (contractorsData?.success) setContractorsOptions(contractorsData.contractors || [])
+        if (clerkOfWorksData?.success) setClerkOfWorksOptions(clerkOfWorksData.clerkOfWorks || [])
+        if (fundingAgenciesData?.success) setFundingAgenciesOptions(fundingAgenciesData.fundingAgencies || [])
+        if (projectManagersData?.success) setProjectManagersOptions(projectManagersData.projectManagers || [])
+        if (projectCoordinatorsData?.success) setProjectCoordinatorsOptions(projectCoordinatorsData.projectCoordinators || [])
+        if (buildingTypesData?.success) setBuildingTypesOptions(buildingTypesData.buildingTypes || [])
+        if (projectTypesData?.success) setProjectTypesOptions(projectTypesData.projectTypes || [])
+        if (servicesData?.success) setServicesOptions(servicesData.services || [])
+      } catch (error) {
+        console.error('Error fetching filter options:', error)
+      }
+    }
+    fetchContentOptions()
   }, [])
 
   // Auto-switch to list view on small devices
@@ -252,6 +328,13 @@ const ProjectDashboardFixed = () => {
     return [...new Set(buildingTypeNames)]
   }
 
+  const getUniqueProjectTypes = () => {
+    const projectTypeNames = projects.flatMap(project => 
+      getNamesFromStakeholders(project.project_types, 'projectType')
+    )
+    return [...new Set(projectTypeNames)]
+  }
+
   const getUniqueRegions = () => {
     return locations.regions
   }
@@ -350,6 +433,12 @@ const ProjectDashboardFixed = () => {
       )
     }
 
+    if (projectTypeFilter !== 'all') {
+      filtered = filtered.filter(project => 
+        getNamesFromStakeholders(project.project_types, 'projectType').includes(projectTypeFilter)
+      )
+    }
+
     if (regionFilter !== 'all') {
       filtered = filtered.filter(project => 
         project.project_location?.region === regionFilter
@@ -388,7 +477,7 @@ const ProjectDashboardFixed = () => {
 
     setFilteredProjects(filtered)
     setDisplayedProjects(filtered.slice(0, currentPage * itemsPerPage))
-  }, [searchTerm, statusFilter, priorityFilter, clientFilter, contractorFilter, clerkOfWorkFilter, projectServiceFilter, buildingTypeFilter, regionFilter, cityFilter, townFilter, fundingAgencyFilter, projectManagerFilter, projectCoordinatorFilter, projects, currentPage, itemsPerPage])
+  }, [searchTerm, statusFilter, priorityFilter, clientFilter, contractorFilter, clerkOfWorkFilter, projectServiceFilter, buildingTypeFilter, projectTypeFilter, regionFilter, cityFilter, townFilter, fundingAgencyFilter, projectManagerFilter, projectCoordinatorFilter, projects, currentPage, itemsPerPage])
 
   const handleProjectClick = (project) => {
     setExpandedProject(expandedProject === project.project_id ? null : project.project_id)
@@ -538,8 +627,8 @@ const ProjectDashboardFixed = () => {
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="all">All Services</option>
-                    {getUniqueProjectServices().map(service => (
-                      <option key={service} value={service}>{service}</option>
+                    {servicesOptions.map(service => (
+                      <option key={service.id} value={service.serviceName}>{service.serviceName}</option>
                     ))}
                   </select>
                 </div>
@@ -554,8 +643,24 @@ const ProjectDashboardFixed = () => {
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="all">All Building Types</option>
-                    {getUniqueBuildingTypes().map(type => (
-                      <option key={type} value={type}>{type}</option>
+                    {buildingTypesOptions.map(type => (
+                      <option key={type.id} value={type.buildingType}>{type.buildingType}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Project Type
+                  </label>
+                  <select
+                    value={projectTypeFilter}
+                    onChange={(e) => setProjectTypeFilter(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  >
+                    <option value="all">All Project Types</option>
+                    {projectTypesOptions.map(type => (
+                      <option key={type.id} value={type.projectType}>{type.projectType}</option>
                     ))}
                   </select>
                 </div>
@@ -650,8 +755,8 @@ const ProjectDashboardFixed = () => {
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="all">All Clients</option>
-                    {getUniqueClients().map(client => (
-                      <option key={client} value={client}>{client}</option>
+                    {clientsOptions.map(c => (
+                      <option key={c.id} value={c.clientName}>{c.clientName}</option>
                     ))}
                   </select>
                 </div>
@@ -666,8 +771,8 @@ const ProjectDashboardFixed = () => {
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="all">All Contractors</option>
-                    {getUniqueContractors().map(contractor => (
-                      <option key={contractor} value={contractor}>{contractor}</option>
+                    {contractorsOptions.map(c => (
+                      <option key={c.id} value={c.fullName}>{c.fullName}</option>
                     ))}
                   </select>
                 </div>
@@ -682,8 +787,8 @@ const ProjectDashboardFixed = () => {
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="all">All Clerk of Works</option>
-                    {getUniqueClerkOfWorks().map(cow => (
-                      <option key={cow} value={cow}>{cow}</option>
+                    {clerkOfWorksOptions.map(cow => (
+                      <option key={cow.id} value={cow.fullName}>{cow.fullName}</option>
                     ))}
                   </select>
                 </div>
@@ -698,8 +803,8 @@ const ProjectDashboardFixed = () => {
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="all">All Funding Agencies</option>
-                    {getUniqueFundingAgencies().map(agency => (
-                      <option key={agency} value={agency}>{agency}</option>
+                    {fundingAgenciesOptions.map(agency => (
+                      <option key={agency.id} value={agency.agencyName}>{agency.agencyName}</option>
                     ))}
                   </select>
                 </div>
@@ -714,8 +819,8 @@ const ProjectDashboardFixed = () => {
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="all">All Project Managers</option>
-                    {getUniqueProjectManagers().map(manager => (
-                      <option key={manager} value={manager}>{manager}</option>
+                    {projectManagersOptions.map(manager => (
+                      <option key={manager.id} value={manager.managerName}>{manager.managerName}</option>
                     ))}
                   </select>
                 </div>
@@ -730,8 +835,8 @@ const ProjectDashboardFixed = () => {
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="all">All Project Coordinators</option>
-                    {getUniqueProjectCoordinators().map(coordinator => (
-                      <option key={coordinator} value={coordinator}>{coordinator}</option>
+                    {projectCoordinatorsOptions.map(coordinator => (
+                      <option key={coordinator.id} value={coordinator.fullName}>{coordinator.fullName}</option>
                     ))}
                   </select>
                 </div>
@@ -751,6 +856,7 @@ const ProjectDashboardFixed = () => {
             setClerkOfWorkFilter('all')
             setProjectServiceFilter('all')
             setBuildingTypeFilter('all')
+            setProjectTypeFilter('all')
             setRegionFilter('all')
             setCityFilter('all')
             setTownFilter('all')

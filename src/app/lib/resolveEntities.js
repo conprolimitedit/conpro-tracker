@@ -52,6 +52,7 @@ export async function resolveProjectEntities(project) {
       clerkOfWorks,
       projectManagers,
       projectCoordinators,
+      projectTypes,
       buildingTypes,
       projectServices,
       linkedProjects
@@ -62,6 +63,7 @@ export async function resolveProjectEntities(project) {
       fetchEntitiesByIds('clerk_of_works', project.clerk_of_works, 'fullName'),
       fetchEntitiesByIds('project_managers', project.project_managers, 'managerName'),
       fetchEntitiesByIds('project_coordinators', project.project_coordinators, 'fullName'),
+      fetchEntitiesByIds('project_types', project.project_types, 'projectType'),
       fetchEntitiesByIds('buildingTypes', project.building_types, 'buildingType'),
       fetchEntitiesByIds('services', project.project_services, 'serviceName'),
       fetchEntitiesByIds('projects', project.linked_projects, 'project_name', 'project_id')
@@ -76,6 +78,7 @@ export async function resolveProjectEntities(project) {
       clerk_of_works: clerkOfWorks,
       project_managers: projectManagers,
       project_coordinators: projectCoordinators,
+      project_types: projectTypes,
       building_types: buildingTypes,
       project_services: projectServices,
       linked_projects: linkedProjects

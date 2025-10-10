@@ -184,6 +184,7 @@ export async function POST(request) {
       clerk_of_works: body.clerk_of_works || [],
       project_coordinators: body.project_coordinators || [],
       project_managers: body.project_managers || [],
+      project_types: body.project_types || [],
       building_types: body.building_types || [],
       project_services: body.project_services || [],
       project_status: body.project_status || 'planning',

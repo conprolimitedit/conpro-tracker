@@ -17,6 +17,7 @@ const ContentCRUD = ({
   const [editingItem, setEditingItem] = useState(null)
   const [formData, setFormData] = useState({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [formError, setFormError] = useState('')
 
   useEffect(() => {
     setItems(data || [])
@@ -37,6 +38,7 @@ const ContentCRUD = ({
       })
       setFormData(initialData)
     }
+    setFormError('')
   }, [editingItem, fields])
 
   const handleInputChange = (e) => {
@@ -50,24 +52,37 @@ const ContentCRUD = ({
   const handleSubmit = async (e) => {
     e.preventDefault()
     setIsSubmitting(true)
+    setFormError('')
     
     try {
       if (editingItem) {
         // Update existing item
         const updatedItem = { ...editingItem, ...formData }
-        await onSave(updatedItem, editingItem.id)
+        const result = await onSave(updatedItem, editingItem.id)
+        if (result && result.duplicate) {
+          setFormError(result.message || 'Duplicate exists. Please adjust the values.')
+          return
+        }
         setItems(prev => prev.map(item => 
           item.id === editingItem.id ? updatedItem : item
         ))
       } else {
         // Create new item
-        const savedItem = await onSave(formData)
-        setItems(prev => [...prev, savedItem])
+        const result = await onSave(formData)
+        if (result && result.duplicate) {
+          setFormError(result.message || 'Duplicate exists. Please adjust the values.')
+          return
+        }
+        const savedItem = result
+        if (savedItem && savedItem.id) {
+          setItems(prev => [...prev, savedItem])
+        }
       }
       
       handleCloseModal()
     } catch (error) {
       console.error('Error saving item:', error)
+      setFormError(error?.message || 'Failed to save item. Please try again.')
     } finally {
       setIsSubmitting(false)
     }
@@ -145,6 +160,28 @@ const ContentCRUD = ({
 
       {/* Items List */}
       <div className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-md">
+        {/* Header row for md+ screens */}
+        {filteredItems.length > 0 && (
+          <div className="hidden md:flex items-center justify-between px-4 md:px-6 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center space-x-3">
+                {fields.map((field) => (
+                  <div key={field.name} className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">
+                      {field.label}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {showActions && (
+              <div className="w-[120px] flex items-center justify-end">
+                <p className="text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">Actions</p>
+              </div>
+            )}
+          </div>
+        )}
+
         <ul className="divide-y divide-gray-200 dark:divide-gray-700">
           {filteredItems.length === 0 ? (
             <li className="px-4 md:px-6 py-8 text-center">
@@ -193,12 +230,9 @@ const ContentCRUD = ({
                 <div className="hidden md:flex items-center justify-between">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center space-x-3">
-                      {fields.map((field, index) => (
+                      {fields.map((field) => (
                         <div key={field.name} className="flex-1 min-w-0">
-                          <p className={`text-sm font-medium ${index === 0 ? 'text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400'}`}>
-                            {field.label}
-                          </p>
-                          <p className={`text-sm ${index === 0 ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'} truncate`}>
+                          <p className="text-sm text-gray-900 dark:text-white truncate">
                             {item[field.name]}
                           </p>
                         </div>
@@ -247,6 +281,11 @@ const ContentCRUD = ({
                 </button>
               </div>
               
+              {formError && (
+                <div className="mb-3 px-3 py-2 text-sm rounded bg-red-100 text-red-700 border border-red-300">
+                  {formError}
+                </div>
+              )}
               <form onSubmit={handleSubmit} className="space-y-4">
                 {fields.map((field) => (
                   <div key={field.name}>

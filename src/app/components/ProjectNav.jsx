@@ -239,11 +239,11 @@ const ProjectNav = () => {
       )}
 
       {/* Navigation Sidebar */}
-      <div className={`w-full md:w-xs lg:w-sm bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 min-h-screen overflow-y-auto transition-transform duration-300 ${
-        isMenuOpen 
-          ? 'fixed top-0 left-0 z-[50] transform translate-x-0' 
-          : 'md:relative md:transform-none fixed top-0 left-0 z-[55] transform -translate-x-full md:translate-x-0'
-      }`}>
+      <div className={`${
+        isMenuOpen
+          ? 'fixed top-0 left-0 z-[55] transform translate-x-0 pointer-events-auto'
+          : 'fixed top-0 left-0 z-[-1] transform -translate-x-full pointer-events-none md:z-auto md:pointer-events-auto'
+      } bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 min-h-screen overflow-y-auto transition-transform duration-300 w-4/5 md:w-xs lg:w-sm md:relative md:transform-none md:translate-x-0`}>
         <div className="p-4">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center space-x-2">
@@ -253,18 +253,19 @@ const ProjectNav = () => {
               </h6>
             </div>
             {/* Close button for mobile */}
-            {/* <button
+            <button
               onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
                 toggleMobileMenu()
               }}
               className="md:hidden p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors relative z-10"
+              aria-label="Close navigation"
             >
               <svg className="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
-            </button> */}
+            </button>
           </div>
           
           <nav className="space-y-1">

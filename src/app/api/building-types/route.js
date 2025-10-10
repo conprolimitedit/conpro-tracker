@@ -2,14 +2,22 @@ import { NextResponse } from 'next/server'
 import { supabase } from '@/app/lib/supabaseClient'
 
 // GET /api/building-types - Get all building types
-export async function GET() {
+export async function GET(request) {
     try {
         console.log('Fetching all building types from database...')
-        
+        const { searchParams } = new URL(request.url)
+        const pageParam = parseInt(searchParams.get('page') || '1', 10)
+        const limitParam = parseInt(searchParams.get('limit') || '1000', 10)
+        const page = Number.isNaN(pageParam) || pageParam < 1 ? 1 : pageParam
+        const limit = Number.isNaN(limitParam) || limitParam < 1 ? 1000 : limitParam
+        const from = (page - 1) * limit
+        const to = from + limit - 1
+
         const { data, error } = await supabase
             .from('buildingTypes')
-            .select('id, buildingType, category, created_at')
+            .select('id, buildingType, category, code, created_at')
             .order('id', { ascending: true })
+            .range(from, to)
 
         if (error) {
             console.error('Database error:', error)
@@ -24,6 +32,8 @@ export async function GET() {
         return NextResponse.json({ 
             success: true,
             count: data?.length || 0,
+            page,
+            limit,
             buildingTypes: data || []
         }, { status: 200 })
         
@@ -39,9 +49,9 @@ export async function GET() {
 // POST /api/building-types - Create new building type
 export async function POST(request) {
     try {
-        const { buildingType, category } = await request.json()
+        const { buildingType, category, code } = await request.json()
         
-        console.log('Creating new building type:', { buildingType, category })
+        console.log('Creating new building type:', { buildingType, category, code })
         
         if (!buildingType || !category) {
             return NextResponse.json({ 
@@ -49,13 +59,36 @@ export async function POST(request) {
             }, { status: 400 })
         }
 
+        // Duplicate check (buildingType + category)
+        // Duplicate check (buildingType + category [+ code when provided])
+        let dupQuery = supabase
+            .from('buildingTypes')
+            .select('id')
+            .ilike('buildingType', buildingType)
+            .ilike('category', category)
+        if (code && code.toString().trim() !== '') {
+            dupQuery = dupQuery.ilike('code', code)
+        }
+        const { data: dupCheck, error: dupErr } = await dupQuery
+
+        if (dupErr) {
+            console.error('Duplicate check error:', dupErr)
+        }
+        if ((dupCheck?.length || 0) > 0) {
+            return NextResponse.json({ 
+                success: false,
+                error: 'A building type with this name and category already exists.'
+            }, { status: 409 })
+        }
+
         const { data, error } = await supabase
             .from('buildingTypes')
             .insert([{
                 buildingType,
-                category
+                category,
+                code: code || null
             }])
-            .select('id, buildingType, category, created_at')
+            .select('id, buildingType, category, code, created_at')
 
         if (error) {
             console.error('Database error:', error)
@@ -85,9 +118,9 @@ export async function POST(request) {
 // PUT /api/building-types - Update building type
 export async function PUT(request) {
     try {
-        const { id, buildingType, category } = await request.json()
+        const { id, buildingType, category, code } = await request.json()
         
-        console.log('Updating building type:', { id, buildingType, category })
+        console.log('Updating building type:', { id, buildingType, category, code })
         
         if (!id || !buildingType || !category) {
             return NextResponse.json({ 
@@ -95,14 +128,37 @@ export async function PUT(request) {
             }, { status: 400 })
         }
 
+        // Duplicate check (exclude current id)
+        // Duplicate check (exclude current id). Include code when provided
+        let dupQuery = supabase
+            .from('buildingTypes')
+            .select('id')
+            .ilike('buildingType', buildingType)
+            .ilike('category', category)
+        if (code && code.toString().trim() !== '') {
+            dupQuery = dupQuery.ilike('code', code)
+        }
+        const { data: dupCheck, error: dupErr } = await dupQuery
+        if (dupErr) {
+            console.error('Duplicate check error:', dupErr)
+        }
+        const hasDuplicate = (dupCheck || []).some(row => row.id !== id)
+        if (hasDuplicate) {
+            return NextResponse.json({ 
+                success: false,
+                error: 'A building type with this name and category already exists.'
+            }, { status: 409 })
+        }
+
         const { data, error } = await supabase
             .from('buildingTypes')
             .update({
                 buildingType,
-                category
+                category,
+                code: code || null
             })
             .eq('id', id)
-            .select('id, buildingType, category, created_at')
+            .select('id, buildingType, category, code, created_at')
 
         if (error) {
             console.error('Database error:', error)

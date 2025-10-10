@@ -39,6 +39,7 @@ const ProjectOverviewPage = () => {
     slug: '',
     projectContractor: [],
     buildingTypes: [],
+    projectTypes: [],
     projectServices: [],
     projectDescription: '',
     projectStatus: '',
@@ -65,6 +66,7 @@ const ProjectOverviewPage = () => {
   const [clients, setClients] = useState([])
   const [contractors, setContractors] = useState([])
   const [buildingTypes, setBuildingTypes] = useState([])
+  const [projectTypes, setProjectTypes] = useState([])
   const [projectServices, setProjectServices] = useState([])
   const [clerkOfWorks, setClerkOfWorks] = useState([])
   const [fundingAgencies, setFundingAgencies] = useState([])
@@ -103,6 +105,7 @@ const ProjectOverviewPage = () => {
         clientsRes,
         contractorsRes,
         buildingTypesRes,
+        projectTypesRes,
         servicesRes,
         clerkOfWorksRes,
         fundingAgenciesRes,
@@ -113,6 +116,7 @@ const ProjectOverviewPage = () => {
         fetch('/api/clients'),
         fetch('/api/contractors'),
         fetch('/api/building-types'),
+        fetch('/api/project-types'),
         fetch('/api/services'),
         fetch('/api/clerk-of-works'),
         fetch('/api/funding-agencies'),
@@ -126,6 +130,7 @@ const ProjectOverviewPage = () => {
         clientsData,
         contractorsData,
         buildingTypesData,
+        projectTypesData,
         servicesData,
         clerkOfWorksData,
         fundingAgenciesData,
@@ -136,6 +141,7 @@ const ProjectOverviewPage = () => {
         clientsRes.json(),
         contractorsRes.json(),
         buildingTypesRes.json(),
+        projectTypesRes.json(),
         servicesRes.json(),
         clerkOfWorksRes.json(),
         fundingAgenciesRes.json(),
@@ -148,6 +154,7 @@ const ProjectOverviewPage = () => {
       if (clientsData.success) setClients(clientsData.clients || [])
       if (contractorsData.success) setContractors(contractorsData.contractors || [])
       if (buildingTypesData.success) setBuildingTypes(buildingTypesData.buildingTypes || [])
+      if (projectTypesData.success) setProjectTypes(projectTypesData.projectTypes || [])
       if (servicesData.success) setProjectServices(servicesData.services || [])
       if (clerkOfWorksData.success) setClerkOfWorks(clerkOfWorksData.clerkOfWorks || [])
       if (fundingAgenciesData.success) setFundingAgencies(fundingAgenciesData.fundingAgencies || [])
@@ -198,6 +205,7 @@ const ProjectOverviewPage = () => {
         slug: project.project_slug || '',
         projectContractor: project.contractors || [],
         buildingTypes: project.building_types || [],
+        projectTypes: project.project_types || [],
         projectServices: project.project_services || [],
         projectDescription: project.project_description || '',
         projectStatus: project.project_status || '',
@@ -323,6 +331,13 @@ const ProjectOverviewPage = () => {
     }))
   }, [])
 
+  const handleProjectTypesChange = useCallback((types) => {
+    setFormData(prev => ({
+      ...prev,
+      projectTypes: types
+    }))
+  }, [])
+
   const handleClerkOfWorksChange = useCallback((cow) => {
     setFormData(prev => ({
       ...prev,
@@ -402,6 +417,7 @@ const ProjectOverviewPage = () => {
         project_coordinators: formData.projectCoordinators.map(coord => coord.id || coord), // Use ID
         project_managers: formData.projectManagers.map(manager => manager.id || manager), // Use ID
         building_types: formData.buildingTypes.map(type => type.id || type), // Use ID
+        project_types: formData.projectTypes.map(type => type.id || type), // Use ID
         project_services: formData.projectServices.map(service => service.id || service), // Use ID
         project_status: formData.projectStatus,
         project_start_date: formData.projectStartDate,
@@ -793,6 +809,20 @@ const ProjectOverviewPage = () => {
                   placeholder="Select building types..."
                   searchPlaceholder="Search building types..."
                   nameField="buildingType"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Project Types
+                </label>
+                <MultiSelectDropdown
+                  options={projectTypes}
+                  selectedItems={formData.projectTypes}
+                  onSelectionChange={handleProjectTypesChange}
+                  placeholder="Select project types..."
+                  searchPlaceholder="Search project types..."
+                  nameField="projectType"
                 />
               </div>
 

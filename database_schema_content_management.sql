@@ -6,6 +6,7 @@ CREATE TABLE building_types (
     id SERIAL PRIMARY KEY,
     building_type VARCHAR(255) NOT NULL,
     category VARCHAR(255) NOT NULL,
+    code VARCHAR(64),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

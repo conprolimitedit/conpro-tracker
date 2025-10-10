@@ -2,14 +2,22 @@ import { NextResponse } from 'next/server'
 import { supabase } from '@/app/lib/supabaseClient'
 
 // GET /api/funding-agencies - Get all funding agencies
-export async function GET() {
+export async function GET(request) {
     try {
         console.log('Fetching all funding agencies from database...')
-        
+        const { searchParams } = new URL(request.url)
+        const pageParam = parseInt(searchParams.get('page') || '1', 10)
+        const limitParam = parseInt(searchParams.get('limit') || '1000', 10)
+        const page = Number.isNaN(pageParam) || pageParam < 1 ? 1 : pageParam
+        const limit = Number.isNaN(limitParam) || limitParam < 1 ? 1000 : limitParam
+        const from = (page - 1) * limit
+        const to = from + limit - 1
+
         const { data, error } = await supabase
             .from('funding_agency')
             .select('id, agencyName, agencyType, created_at')
             .order('id', { ascending: true })
+            .range(from, to)
 
         if (error) {
             console.error('Database error:', error)
@@ -24,6 +32,8 @@ export async function GET() {
         return NextResponse.json({ 
             success: true,
             count: data?.length || 0,
+            page,
+            limit,
             fundingAgencies: data || []
         }, { status: 200 })
         
@@ -49,6 +59,18 @@ export async function POST(request) {
             }, { status: 400 })
         }
         
+        // Duplicate check on agencyName
+        const { data: dupCheck, error: dupErr } = await supabase
+            .from('funding_agency')
+            .select('id, agencyName')
+            .ilike('agencyName', agencyName)
+        if (dupErr) {
+            console.error('Duplicate check error:', dupErr)
+        }
+        if ((dupCheck?.length || 0) > 0) {
+            return NextResponse.json({ success: false, error: 'Funding agency with this name already exists.' }, { status: 409 })
+        }
+
         const { data, error } = await supabase
             .from('funding_agency')
             .insert([{ agencyName: agencyName, agencyType: agencyType }])
@@ -92,6 +114,18 @@ export async function PUT(request) {
             }, { status: 400 })
         }
         
+        // Duplicate check excluding current id
+        const { data: dupCheck, error: dupErr } = await supabase
+            .from('funding_agency')
+            .select('id, agencyName')
+            .ilike('agencyName', agencyName)
+        if (dupErr) {
+            console.error('Duplicate check error:', dupErr)
+        }
+        if ((dupCheck || []).some(row => row.id !== id)) {
+            return NextResponse.json({ success: false, error: 'Funding agency with this name already exists.' }, { status: 409 })
+        }
+
         const { data, error } = await supabase
             .from('funding_agency')
             .update({ agencyName: agencyName, agencyType: agencyType })

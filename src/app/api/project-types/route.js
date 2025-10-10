@@ -2,14 +2,22 @@ import { NextResponse } from 'next/server'
 import { supabase } from '@/app/lib/supabaseClient'
 
 // GET /api/project-types - Get all project types
-export async function GET() {
+export async function GET(request) {
     try {
         console.log('Fetching all project types from database...')
-        
+        const { searchParams } = new URL(request.url)
+        const pageParam = parseInt(searchParams.get('page') || '1', 10)
+        const limitParam = parseInt(searchParams.get('limit') || '1000', 10)
+        const page = Number.isNaN(pageParam) || pageParam < 1 ? 1 : pageParam
+        const limit = Number.isNaN(limitParam) || limitParam < 1 ? 1000 : limitParam
+        const from = (page - 1) * limit
+        const to = from + limit - 1
+
         const { data, error } = await supabase
             .from('project_types')
             .select('id, projectType, category, description, created_at')
             .order('id', { ascending: true })
+            .range(from, to)
 
         if (error) {
             console.error('Database error:', error)
@@ -24,6 +32,8 @@ export async function GET() {
         return NextResponse.json({ 
             success: true,
             count: data?.length || 0,
+            page,
+            limit,
             projectTypes: data || []
         }, { status: 200 })
         
@@ -49,6 +59,18 @@ export async function POST(request) {
             }, { status: 400 })
         }
         
+        // Duplicate check on projectType (case-insensitive)
+        const { data: dupCheck, error: dupErr } = await supabase
+            .from('project_types')
+            .select('id, projectType')
+            .ilike('projectType', projectType)
+        if (dupErr) {
+            console.error('Duplicate check error:', dupErr)
+        }
+        if ((dupCheck?.length || 0) > 0) {
+            return NextResponse.json({ success: false, error: 'Project type with this name already exists.' }, { status: 409 })
+        }
+
         const { data, error } = await supabase
             .from('project_types')
             .insert([{ projectType: projectType, category, description: description || null }])
@@ -92,6 +114,18 @@ export async function PUT(request) {
             }, { status: 400 })
         }
         
+        // Duplicate check excluding current id
+        const { data: dupCheck, error: dupErr } = await supabase
+            .from('project_types')
+            .select('id, projectType')
+            .ilike('projectType', projectType)
+        if (dupErr) {
+            console.error('Duplicate check error:', dupErr)
+        }
+        if ((dupCheck || []).some(row => row.id !== id)) {
+            return NextResponse.json({ success: false, error: 'Project type with this name already exists.' }, { status: 409 })
+        }
+
         const { data, error } = await supabase
             .from('project_types')
             .update({ projectType, category, description: description || null })
