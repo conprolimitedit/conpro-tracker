@@ -13,12 +13,13 @@ const ProjectDataSummary = () => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  // Fetch projects from API
+  // Fetch ALL projects from API (no filters)
   useEffect(() => {
     const fetchProjects = async () => {
       try {
         setLoading(true)
-        const response = await fetch('/api/projects')
+        // Get all projects without any filters for summary
+        const response = await fetch('/api/projects?limit=1000')
         const data = await response.json()
         
         if (data.success) {
@@ -35,7 +36,7 @@ const ProjectDataSummary = () => {
     }
 
     fetchProjects()
-  }, [])
+  }, []) // Only fetch once on mount
 
   // Calculate statistics from real project data
   const totalProjects = projects.length

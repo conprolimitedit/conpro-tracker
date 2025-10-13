@@ -89,6 +89,13 @@ const ContentSidebar = () => {
       description: 'Manage project classifications'
     },
     {
+      id: 'project-category',
+      name: 'Project Categories',
+      icon: FiGrid || FiIcons.FiGrid || '🗂️',
+      path: '/contentManagement/project-category',
+      description: 'Manage project categories'
+    },
+    {
       id: 'finance-documents',
       name: 'Finance Documents',
       icon: FiFileText || FiIcons.FiFileText || '📄',

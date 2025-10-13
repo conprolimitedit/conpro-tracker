@@ -53,6 +53,7 @@ export async function resolveProjectEntities(project) {
       projectManagers,
       projectCoordinators,
       projectTypes,
+      projectCategories,
       buildingTypes,
       projectServices,
       linkedProjects
@@ -64,6 +65,7 @@ export async function resolveProjectEntities(project) {
       fetchEntitiesByIds('project_managers', project.project_managers, 'managerName'),
       fetchEntitiesByIds('project_coordinators', project.project_coordinators, 'fullName'),
       fetchEntitiesByIds('project_types', project.project_types, 'projectType'),
+      fetchEntitiesByIds('project_category', project.project_categories, 'category'),
       fetchEntitiesByIds('buildingTypes', project.building_types, 'buildingType'),
       fetchEntitiesByIds('services', project.project_services, 'serviceName'),
       fetchEntitiesByIds('projects', project.linked_projects, 'project_name', 'project_id')
@@ -79,6 +81,7 @@ export async function resolveProjectEntities(project) {
       project_managers: projectManagers,
       project_coordinators: projectCoordinators,
       project_types: projectTypes,
+      project_categories: projectCategories,
       building_types: buildingTypes,
       project_services: projectServices,
       linked_projects: linkedProjects

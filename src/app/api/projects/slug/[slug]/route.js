@@ -183,6 +183,7 @@ export async function PUT(request, { params }) {
       project_priority: body.project_priority || 'medium',
       project_cover_image: coverImageData || body.project_cover_image || null,
       project_location: body.project_location || null,
+      project_categories: Array.isArray(body.project_categories) ? body.project_categories : (body.project_categories ? [body.project_categories] : []),
       project_clients: body.project_clients || [],
       funding_agencies: Array.isArray(body.funding_agencies) ? body.funding_agencies : (body.funding_agencies ? [body.funding_agencies] : []),
       contractors: body.contractors || [],

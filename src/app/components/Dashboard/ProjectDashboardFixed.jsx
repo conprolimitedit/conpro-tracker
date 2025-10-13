@@ -1,6 +1,6 @@
 'use client'
 import React, { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { FiMapPin, FiCalendar, FiUser, FiClock, FiEye, FiSearch, FiFilter, FiDollarSign, FiMap, FiImage, FiList, FiChevronDown, FiChevronRight, FiPlus } from 'react-icons/fi'
 import ProjectMap from '../Map/ProjectMap'
 import ProjectDataSummary from '../Projects/ProjectDataSummary'
@@ -8,11 +8,14 @@ import { MdCancel } from "react-icons/md";
 
 const ProjectDashboardFixed = () => {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const [selectedProject, setSelectedProject] = useState(null)
   const [expandedProject, setExpandedProject] = useState(null)
   const [projects, setProjects] = useState([])
   const [filteredProjects, setFilteredProjects] = useState([])
   const [loading, setLoading] = useState(true)
+  const [filtering, setFiltering] = useState(false)
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1)
@@ -32,12 +35,13 @@ const ProjectDashboardFixed = () => {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
-  const [clientFilter, setClientFilter] = useState('all')
-  const [contractorFilter, setContractorFilter] = useState('all')
-  const [clerkOfWorkFilter, setClerkOfWorkFilter] = useState('all')
-  const [projectServiceFilter, setProjectServiceFilter] = useState('all')
-  const [buildingTypeFilter, setBuildingTypeFilter] = useState('all')
-  const [projectTypeFilter, setProjectTypeFilter] = useState('all')
+  const [clientFilter, setClientFilter] = useState('all') // stores client id
+  const [contractorFilter, setContractorFilter] = useState('all') // contractor id
+  const [clerkOfWorkFilter, setClerkOfWorkFilter] = useState('all') // cow id
+  const [projectServiceFilter, setProjectServiceFilter] = useState('all') // service id
+  const [buildingTypeFilter, setBuildingTypeFilter] = useState('all') // building type id
+  const [projectTypeFilter, setProjectTypeFilter] = useState('all') // project type id
+  const [projectCategoryFilter, setProjectCategoryFilter] = useState('all')
   const [regionFilter, setRegionFilter] = useState('all')
   const [cityFilter, setCityFilter] = useState('all')
   const [townFilter, setTownFilter] = useState('all')
@@ -62,6 +66,7 @@ const ProjectDashboardFixed = () => {
   const [projectCoordinatorsOptions, setProjectCoordinatorsOptions] = useState([])
   const [buildingTypesOptions, setBuildingTypesOptions] = useState([])
   const [projectTypesOptions, setProjectTypesOptions] = useState([])
+  const [projectCategoriesOptions, setProjectCategoriesOptions] = useState([])
   const [servicesOptions, setServicesOptions] = useState([])
 
 
@@ -90,17 +95,42 @@ const ProjectDashboardFixed = () => {
   }
 
   // Fetch projects data from API with pagination
+  const buildQueryParams = () => {
+    const params = new URLSearchParams()
+    if (searchTerm) params.set('search', searchTerm)
+    if (statusFilter !== 'all') params.set('status', statusFilter)
+    if (priorityFilter !== 'all') params.set('priority', priorityFilter)
+    if (clientFilter !== 'all') params.set('clientId', String(clientFilter))
+    if (contractorFilter !== 'all') params.set('contractorId', String(contractorFilter))
+    if (clerkOfWorkFilter !== 'all') params.set('cowId', String(clerkOfWorkFilter))
+    if (projectServiceFilter !== 'all') params.set('serviceId', String(projectServiceFilter))
+    if (buildingTypeFilter !== 'all') params.set('buildingTypeId', String(buildingTypeFilter))
+    if (projectTypeFilter !== 'all') params.set('projectTypeId', String(projectTypeFilter))
+    if (projectCategoryFilter !== 'all') params.set('projectCategoryId', String(projectCategoryFilter))
+    if (fundingAgencyFilter !== 'all') params.set('fundingAgencyId', String(fundingAgencyFilter))
+    if (projectManagerFilter !== 'all') params.set('projectManagerId', String(projectManagerFilter))
+    if (projectCoordinatorFilter !== 'all') params.set('projectCoordinatorId', String(projectCoordinatorFilter))
+    if (regionFilter !== 'all') params.set('region', regionFilter)
+    if (cityFilter !== 'all') params.set('city', cityFilter)
+    if (townFilter !== 'all') params.set('town', townFilter)
+    return params
+  }
+
   const fetchProjects = async (page = 1, reset = false) => {
     try {
       if (reset) {
         setLoading(true)
+        setFiltering(true)
         setCurrentPage(1)
         setDisplayedProjects([])
       } else {
         setLoadingMore(true)
       }
 
-      const response = await fetch(`/api/projects?page=${page}&limit=${itemsPerPage}`)
+      const params = buildQueryParams()
+      params.set('page', String(page))
+      params.set('limit', String(itemsPerPage))
+      const response = await fetch(`/api/projects?${params.toString()}`)
       if (response.ok) {
         const data = await response.json()
         const newProjects = data.projects || []
@@ -138,6 +168,7 @@ const ProjectDashboardFixed = () => {
       }
     } finally {
       setLoading(false)
+      setFiltering(false)
       setLoadingMore(false)
     }
   }
@@ -151,8 +182,41 @@ const ProjectDashboardFixed = () => {
 
   // Initial data fetch
   useEffect(() => {
+    // Initialize filters from URL on first mount
+    try {
+      const get = (k) => searchParams?.get(k)
+      setStatusFilter(get('status') || 'all')
+      setPriorityFilter(get('priority') || 'all')
+      setClientFilter(get('clientId') || 'all')
+      setContractorFilter(get('contractorId') || 'all')
+      setClerkOfWorkFilter(get('cowId') || 'all')
+      setProjectServiceFilter(get('serviceId') || 'all')
+      setBuildingTypeFilter(get('buildingTypeId') || 'all')
+      setProjectTypeFilter(get('projectTypeId') || 'all')
+      setProjectCategoryFilter(get('projectCategoryId') || 'all')
+      setFundingAgencyFilter(get('fundingAgencyId') || 'all')
+      setProjectManagerFilter(get('projectManagerId') || 'all')
+      setProjectCoordinatorFilter(get('projectCoordinatorId') || 'all')
+      setRegionFilter(get('region') || 'all')
+      setCityFilter(get('city') || 'all')
+      setTownFilter(get('town') || 'all')
+      setSearchTerm(get('search') || '')
+    } catch {}
+
     fetchProjects(1, true)
   }, [])
+
+  // Sync URL and refetch when filters/search change
+  useEffect(() => {
+    const params = buildQueryParams()
+    // reset page on filter changes
+    params.set('page', '1')
+    params.set('limit', String(itemsPerPage))
+    const url = `${pathname}?${params.toString()}`
+    router.replace(url)
+    fetchProjects(1, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm, statusFilter, priorityFilter, clientFilter, contractorFilter, clerkOfWorkFilter, projectServiceFilter, buildingTypeFilter, projectTypeFilter, projectCategoryFilter, regionFilter, cityFilter, townFilter, fundingAgencyFilter, projectManagerFilter, projectCoordinatorFilter])
 
   // Fetch content options for dropdowns
   useEffect(() => {
@@ -163,6 +227,7 @@ const ProjectDashboardFixed = () => {
           contractorsRes,
           buildingTypesRes,
           projectTypesRes,
+          projectCategoriesRes,
           servicesRes,
           clerkOfWorksRes,
           fundingAgenciesRes,
@@ -173,6 +238,7 @@ const ProjectDashboardFixed = () => {
           fetch('/api/contractors'),
           fetch('/api/building-types'),
           fetch('/api/project-types'),
+          fetch('/api/project-category'),
           fetch('/api/services'),
           fetch('/api/clerk-of-works'),
           fetch('/api/funding-agencies'),
@@ -185,6 +251,7 @@ const ProjectDashboardFixed = () => {
           contractorsData,
           buildingTypesData,
           projectTypesData,
+          projectCategoriesData,
           servicesData,
           clerkOfWorksData,
           fundingAgenciesData,
@@ -195,6 +262,7 @@ const ProjectDashboardFixed = () => {
           contractorsRes.json(),
           buildingTypesRes.json(),
           projectTypesRes.json(),
+          projectCategoriesRes.json(),
           servicesRes.json(),
           clerkOfWorksRes.json(),
           fundingAgenciesRes.json(),
@@ -210,6 +278,7 @@ const ProjectDashboardFixed = () => {
         if (projectCoordinatorsData?.success) setProjectCoordinatorsOptions(projectCoordinatorsData.projectCoordinators || [])
         if (buildingTypesData?.success) setBuildingTypesOptions(buildingTypesData.buildingTypes || [])
         if (projectTypesData?.success) setProjectTypesOptions(projectTypesData.projectTypes || [])
+        if (projectCategoriesData?.success) setProjectCategoriesOptions(projectCategoriesData.projectCategories || [])
         if (servicesData?.success) setServicesOptions(servicesData.services || [])
       } catch (error) {
         console.error('Error fetching filter options:', error)
@@ -335,6 +404,13 @@ const ProjectDashboardFixed = () => {
     return [...new Set(projectTypeNames)]
   }
 
+  const getUniqueProjectCategories = () => {
+    const categoryNames = projects.flatMap(project => 
+      getNamesFromStakeholders(project.project_categories, 'category')
+    )
+    return [...new Set(categoryNames)]
+  }
+
   const getUniqueRegions = () => {
     return locations.regions
   }
@@ -439,6 +515,12 @@ const ProjectDashboardFixed = () => {
       )
     }
 
+    if (projectCategoryFilter !== 'all') {
+      filtered = filtered.filter(project => 
+        getNamesFromStakeholders(project.project_categories, 'category').includes(projectCategoryFilter)
+      )
+    }
+
     if (regionFilter !== 'all') {
       filtered = filtered.filter(project => 
         project.project_location?.region === regionFilter
@@ -477,7 +559,7 @@ const ProjectDashboardFixed = () => {
 
     setFilteredProjects(filtered)
     setDisplayedProjects(filtered.slice(0, currentPage * itemsPerPage))
-  }, [searchTerm, statusFilter, priorityFilter, clientFilter, contractorFilter, clerkOfWorkFilter, projectServiceFilter, buildingTypeFilter, projectTypeFilter, regionFilter, cityFilter, townFilter, fundingAgencyFilter, projectManagerFilter, projectCoordinatorFilter, projects, currentPage, itemsPerPage])
+  }, [searchTerm, statusFilter, priorityFilter, clientFilter, contractorFilter, clerkOfWorkFilter, projectServiceFilter, buildingTypeFilter, projectTypeFilter, projectCategoryFilter, regionFilter, cityFilter, townFilter, fundingAgencyFilter, projectManagerFilter, projectCoordinatorFilter, projects, currentPage, itemsPerPage])
 
   const handleProjectClick = (project) => {
     setExpandedProject(expandedProject === project.project_id ? null : project.project_id)
@@ -514,6 +596,14 @@ const ProjectDashboardFixed = () => {
         return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300'
       case 'planning':
         return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300'
+      case 'on hold':
+        return 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300'
+      case 'cancelled':
+        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
+      case 'abandoned':
+        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
+      case 'terminated':
+        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
       default:
         return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
     }
@@ -597,6 +687,8 @@ const ProjectDashboardFixed = () => {
                     <option value="completed">Completed</option>
                     <option value="on hold">On Hold</option>
                     <option value="cancelled">Cancelled</option>
+                    <option value="abandoned">Abandoned</option>
+                    <option value="terminated">Terminated</option>
                   </select>
                 </div>
 
@@ -661,6 +753,22 @@ const ProjectDashboardFixed = () => {
                     <option value="all">All Project Types</option>
                     {projectTypesOptions.map(type => (
                       <option key={type.id} value={type.projectType}>{type.projectType}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Project Category
+                  </label>
+                  <select
+                    value={projectCategoryFilter}
+                    onChange={(e) => setProjectCategoryFilter(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  >
+                    <option value="all">All Project Categories</option>
+                    {projectCategoriesOptions.map(cat => (
+                      <option key={cat.id} value={cat.category}>{cat.category}</option>
                     ))}
                   </select>
                 </div>
@@ -857,6 +965,7 @@ const ProjectDashboardFixed = () => {
             setProjectServiceFilter('all')
             setBuildingTypeFilter('all')
             setProjectTypeFilter('all')
+            setProjectCategoryFilter('all')
             setRegionFilter('all')
             setCityFilter('all')
             setTownFilter('all')
@@ -939,7 +1048,25 @@ const ProjectDashboardFixed = () => {
               {/* Projects Grid */}
               <div className="flex-1 p-6">
                 <div className="flex flex-wrap gap-4">
-                  {displayedProjects.map((project) => {
+                  {filtering && displayedProjects.length === 0 ? (
+                    // Skeleton loading for initial filter
+                    Array.from({ length: 6 }).map((_, index) => (
+                      <div key={index} className="bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 p-4 w-full md:w-[calc(50%-0.5rem)] lg:w-[calc(33.333%-0.5rem)] animate-pulse">
+                        <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded mb-2"></div>
+                        <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded mb-2 w-3/4"></div>
+                        <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded mb-4 w-1/2"></div>
+                        <div className="h-2 bg-gray-200 dark:bg-gray-600 rounded mb-2"></div>
+                        <div className="h-2 bg-gray-200 dark:bg-gray-600 rounded mb-4"></div>
+                        <div className="h-20 bg-gray-200 dark:bg-gray-600 rounded mb-4"></div>
+                        <div className="space-y-2">
+                          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-2/3"></div>
+                          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-1/2"></div>
+                          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-3/4"></div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    displayedProjects.map((project) => {
                     const { planned, cumulative } = getProgress(project)
                     const progressActual = cumulative
                     const progressPlanned = planned
@@ -1194,7 +1321,8 @@ const ProjectDashboardFixed = () => {
                         </div>
                       </div>
                     )
-                  })}
+                  })
+                  )}
                 </div>
                 
                 {/* Loading More Indicator */}
@@ -1294,7 +1422,23 @@ const ProjectDashboardFixed = () => {
               </h6>
               
               <div className="space-y-4">
-                {displayedProjects.map((project) => {
+                {filtering && displayedProjects.length === 0 ? (
+                  // Skeleton loading for map sidebar
+                  Array.from({ length: 4 }).map((_, index) => (
+                    <div key={index} className="bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 p-4 animate-pulse">
+                      <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded mb-2"></div>
+                      <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded mb-2 w-3/4"></div>
+                      <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded mb-4 w-1/2"></div>
+                      <div className="h-2 bg-gray-200 dark:bg-gray-600 rounded mb-2"></div>
+                      <div className="h-2 bg-gray-200 dark:bg-gray-600 rounded mb-4"></div>
+                      <div className="space-y-2">
+                        <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-2/3"></div>
+                        <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-1/2"></div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  displayedProjects.map((project) => {
                   const { planned, cumulative } = getProgress(project)
                   const progressActual = cumulative
                   const progressPlanned = planned
@@ -1447,7 +1591,8 @@ const ProjectDashboardFixed = () => {
                       </div>
                     </div>
                   )
-                })}
+                })
+                )}
               </div>
             </div>
           </div>

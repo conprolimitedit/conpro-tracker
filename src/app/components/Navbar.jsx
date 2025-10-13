@@ -26,6 +26,7 @@ const Navbar = () => {
     { name: 'Services', href: '/contentManagement/services' },
     { name: 'Clerk of Works', href: '/contentManagement/clerk-of-works' },
     { name: 'Project Types', href: '/contentManagement/project-types' },
+    { name: 'Project Categories', href: '/contentManagement/project-categories' },
     { name: 'Finance Document ', href: '/contentManagement/finance-documents' }
   ]
 

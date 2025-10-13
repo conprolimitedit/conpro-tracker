@@ -22,11 +22,84 @@ export async function GET(request) {
     const from = (page - 1) * limit
     const to = from + limit - 1
 
-    const { data: projects, error } = await supabase
+    // Read filter params
+    const status = searchParams.get('status') || ''
+    const priority = searchParams.get('priority') || ''
+    const clientId = searchParams.get('clientId') || ''
+    const contractorId = searchParams.get('contractorId') || ''
+    const cowId = searchParams.get('cowId') || ''
+    const serviceId = searchParams.get('serviceId') || ''
+    const buildingTypeId = searchParams.get('buildingTypeId') || ''
+    const projectTypeId = searchParams.get('projectTypeId') || ''
+    const projectCategoryId = searchParams.get('projectCategoryId') || ''
+    const fundingAgencyId = searchParams.get('fundingAgencyId') || ''
+    const projectManagerId = searchParams.get('projectManagerId') || ''
+    const projectCoordinatorId = searchParams.get('projectCoordinatorId') || ''
+    const region = searchParams.get('region') || ''
+    const city = searchParams.get('city') || ''
+    const town = searchParams.get('town') || ''
+    const search = searchParams.get('search') || ''
+
+    // Base query
+    let query = supabase
       .from('projects')
       .select('*')
       .order('created_at', { ascending: false })
-      .range(from, to)
+
+    // Apply filters
+    if (status) {
+      query = query.eq('project_status', status)
+    }
+    if (priority) {
+      query = query.eq('project_priority', priority)
+    }
+    if (clientId) {
+      query = query.contains('project_clients', [clientId])
+    }
+    if (contractorId) {
+      query = query.contains('contractors', [contractorId])
+    }
+    if (cowId) {
+      query = query.contains('clerk_of_works', [cowId])
+    }
+    if (serviceId) {
+      query = query.contains('project_services', [serviceId])
+    }
+    if (buildingTypeId) {
+      query = query.contains('building_types', [buildingTypeId])
+    }
+    if (projectTypeId) {
+      query = query.contains('project_types', [projectTypeId])
+    }
+    if (projectCategoryId) {
+      query = query.contains('project_categories', [projectCategoryId])
+    }
+    if (fundingAgencyId) {
+      query = query.contains('funding_agencies', [fundingAgencyId])
+    }
+    if (projectManagerId) {
+      query = query.contains('project_managers', [projectManagerId])
+    }
+    if (projectCoordinatorId) {
+      query = query.contains('project_coordinators', [projectCoordinatorId])
+    }
+    if (region) {
+      query = query.contains('project_location', { region })
+    }
+    if (city) {
+      query = query.contains('project_location', { city })
+    }
+    if (town) {
+      query = query.contains('project_location', { town })
+    }
+    if (search) {
+      // Search in name or description
+      const pattern = `%${search}%`
+      query = query.or(`project_name.ilike.${pattern},project_description.ilike.${pattern}`)
+    }
+
+    // Apply pagination last
+    const { data: projects, error } = await query.range(from, to)
 
     if (error) {
       console.error('❌ Database error:', error)
@@ -178,6 +251,7 @@ export async function POST(request) {
       project_priority: body.project_priority || 'medium',
       project_cover_image: coverImageData || {},
       project_location: body.project_location || {},
+      project_categories: Array.isArray(body.project_categories) ? body.project_categories : (body.project_categories ? [body.project_categories] : []),
       project_clients: body.project_clients || [],
       funding_agencies: Array.isArray(body.funding_agencies) ? body.funding_agencies : (body.funding_agencies ? [body.funding_agencies] : []),
       contractors: body.contractors || [],

@@ -68,6 +68,7 @@ const ProjectOverviewPage = () => {
   const [buildingTypes, setBuildingTypes] = useState([])
   const [projectTypes, setProjectTypes] = useState([])
   const [projectServices, setProjectServices] = useState([])
+  const [projectCategories, setProjectCategories] = useState([])
   const [clerkOfWorks, setClerkOfWorks] = useState([])
   const [fundingAgencies, setFundingAgencies] = useState([])
   const [projectManagers, setProjectManagers] = useState([])
@@ -107,6 +108,7 @@ const ProjectOverviewPage = () => {
         buildingTypesRes,
         projectTypesRes,
         servicesRes,
+        projectCategoriesRes,
         clerkOfWorksRes,
         fundingAgenciesRes,
         projectManagersRes,
@@ -118,6 +120,7 @@ const ProjectOverviewPage = () => {
         fetch('/api/building-types'),
         fetch('/api/project-types'),
         fetch('/api/services'),
+        fetch('/api/project-category'),
         fetch('/api/clerk-of-works'),
         fetch('/api/funding-agencies'),
         fetch('/api/project-managers'),
@@ -132,6 +135,7 @@ const ProjectOverviewPage = () => {
         buildingTypesData,
         projectTypesData,
         servicesData,
+        projectCategoriesData,
         clerkOfWorksData,
         fundingAgenciesData,
         projectManagersData,
@@ -143,6 +147,7 @@ const ProjectOverviewPage = () => {
         buildingTypesRes.json(),
         projectTypesRes.json(),
         servicesRes.json(),
+        projectCategoriesRes.json(),
         clerkOfWorksRes.json(),
         fundingAgenciesRes.json(),
         projectManagersRes.json(),
@@ -156,6 +161,7 @@ const ProjectOverviewPage = () => {
       if (buildingTypesData.success) setBuildingTypes(buildingTypesData.buildingTypes || [])
       if (projectTypesData.success) setProjectTypes(projectTypesData.projectTypes || [])
       if (servicesData.success) setProjectServices(servicesData.services || [])
+      if (projectCategoriesData.success) setProjectCategories(projectCategoriesData.projectCategories || [])
       if (clerkOfWorksData.success) setClerkOfWorks(clerkOfWorksData.clerkOfWorks || [])
       if (fundingAgenciesData.success) setFundingAgencies(fundingAgenciesData.fundingAgencies || [])
       if (projectManagersData.success) setProjectManagers(projectManagersData.projectManagers || [])
@@ -207,6 +213,7 @@ const ProjectOverviewPage = () => {
         buildingTypes: project.building_types || [],
         projectTypes: project.project_types || [],
         projectServices: project.project_services || [],
+        projectCategories: project.project_categories || [],
         projectDescription: project.project_description || '',
         projectStatus: project.project_status || '',
         projectPriority: project.project_priority || 'medium',
@@ -338,6 +345,13 @@ const ProjectOverviewPage = () => {
     }))
   }, [])
 
+  const handleProjectCategoriesChange = useCallback((categories) => {
+    setFormData(prev => ({
+      ...prev,
+      projectCategories: categories
+    }))
+  }, [])
+
   const handleClerkOfWorksChange = useCallback((cow) => {
     setFormData(prev => ({
       ...prev,
@@ -417,6 +431,7 @@ const ProjectOverviewPage = () => {
         project_coordinators: formData.projectCoordinators.map(coord => coord.id || coord), // Use ID
         project_managers: formData.projectManagers.map(manager => manager.id || manager), // Use ID
         building_types: formData.buildingTypes.map(type => type.id || type), // Use ID
+        project_categories: (formData.projectCategories || []).map(cat => cat.id || cat), // Use ID
         project_types: formData.projectTypes.map(type => type.id || type), // Use ID
         project_services: formData.projectServices.map(service => service.id || service), // Use ID
         project_status: formData.projectStatus,
@@ -823,6 +838,20 @@ const ProjectOverviewPage = () => {
                   placeholder="Select project types..."
                   searchPlaceholder="Search project types..."
                   nameField="projectType"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Project Categories
+                </label>
+                <MultiSelectDropdown
+                  options={projectCategories}
+                  selectedItems={formData.projectCategories || []}
+                  onSelectionChange={handleProjectCategoriesChange}
+                  placeholder="Select project categories..."
+                  searchPlaceholder="Search project categories..."
+                  nameField="category"
                 />
               </div>
 
