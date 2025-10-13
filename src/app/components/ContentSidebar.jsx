@@ -3,7 +3,6 @@ import React, { useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { 
   FiHome, 
-  FiBuilding, 
   FiUsers, 
   FiDollarSign, 
   FiSettings, 
@@ -12,7 +11,8 @@ import {
   FiArrowLeft,
   FiFileText,
   FiMenu,
-  FiX
+  FiX,
+  FiTool
 } from 'react-icons/fi'
 
 // Alternative import method
@@ -42,7 +42,7 @@ const ContentSidebar = () => {
     {
       id: 'contractors',
       name: 'Contractors',
-      icon: FiBuilding || FiIcons.FiBuilding || '🏗️',
+      icon: FiTool || FiIcons.FiTool || '🏗️',
       path: '/contentManagement/contractors',
       description: 'Manage construction contractors'
     },

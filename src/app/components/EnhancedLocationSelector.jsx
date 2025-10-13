@@ -4,7 +4,7 @@ import { toast } from 'react-toastify'
 import { FiMapPin, FiSearch, FiChevronDown, FiPlus } from 'react-icons/fi'
 import LocationMap from './LocationMap'
 
-const EnhancedLocationSelector = ({ location, onLocationChange }) => {
+const EnhancedLocationSelector = ({ location, onLocationChange, cityLabel = 'City' }) => {
   const [searchTerm, setSearchTerm] = useState('')
   const [countries, setCountries] = useState([])
   const [regions, setRegions] = useState([])
@@ -897,7 +897,7 @@ const EnhancedLocationSelector = ({ location, onLocationChange }) => {
         {/* City Dropdown */}
         <div className="relative" ref={citiesRef}>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            City *
+            {cityLabel} *
           </label>
           <button
             type="button"

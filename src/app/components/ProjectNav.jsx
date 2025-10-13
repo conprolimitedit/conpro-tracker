@@ -11,7 +11,7 @@ import {
   FiUser,
   FiUsers,
   FiTruck,
-  FiBarChart3,
+  FiBarChart2,
   FiDollarSign,
   FiFile,
   FiShield,
@@ -116,7 +116,7 @@ const ProjectNav = () => {
           hasSubMenu: true,
           subItems: [
             { id: 'inception', name: 'Inception Report', icon: FiFile, path: `/projects/${slug}/post-contract/consultant/inception` },
-            { id: 'progress-reports', name: 'Progress Reports', icon: FiBarChart3, path: `/projects/${slug}/post-contract/consultant/progress-reports` },
+            { id: 'progress-reports', name: 'Progress Reports', icon: FiBarChart2, path: `/projects/${slug}/post-contract/consultant/progress-reports` },
          { id: 'site-meeting-minutes', name: 'Site Meeting Minutes', icon: FiFileText, path: `/projects/${slug}/post-contract/consultant/site-meeting-minutes` },
             { id: 'invoice-claims', name: "Consultant's Invoice / Fee Claims", icon: FiDollarSign, path: `/projects/${slug}/post-contract/consultant/invoice-claims` },
             { id: 'handing-over', name: 'Handing Over', icon: FiFlag, path: `/projects/${slug}/post-contract/consultant/handing-over` },
@@ -131,7 +131,7 @@ const ProjectNav = () => {
           hasSubMenu: true,
           subItems: [
             { id: 'mobilization', name: 'Mobilization to Sites', icon: FiTruck, path: `/projects/${slug}/post-contract/contractor/mobilization` },
-            { id: 'progress-reports', name: 'Progress Reports', icon: FiBarChart3, path: `/projects/${slug}/post-contract/contractor/progress-reports` },
+            { id: 'progress-reports', name: 'Progress Reports', icon: FiBarChart2, path: `/projects/${slug}/post-contract/contractor/progress-reports` },
             { id: 'site-meeting-minutes', name: 'Site Meeting Minutes', icon: FiFileText, path: `/projects/${slug}/post-contract/contractor/site-meeting-minutes` },
             { id: 'ipcs', name: 'Contractor IPCs', icon: FiDollarSign, path: `/projects/${slug}/post-contract/contractor/ipcs` },
             { id: 'handing-over', name: 'Handing Over', icon: FiFlag, path: `/projects/${slug}/post-contract/contractor/handing-over` },

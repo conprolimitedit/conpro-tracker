@@ -34,8 +34,8 @@ const ContractorsPage = () => {
 
   const fields = [
     { name: 'fullName', label: 'Contractor Name', required: true, placeholder: 'Enter contractor name' },
-    { name: 'category', label: 'Category', required: true, placeholder: 'e.g., General Construction, Infrastructure' },
-    { name: 'specialization', label: 'Specialization', required: true, placeholder: 'e.g., Large Scale Projects, Road Construction' }
+    { name: 'category', label: 'Category', required: false, placeholder: 'e.g., General Construction, Infrastructure' },
+    { name: 'specialization', label: 'Specialization', required: false, placeholder: 'e.g., Large Scale Projects, Road Construction' }
   ]
 
   const handleSave = async (contractor, id = null) => {

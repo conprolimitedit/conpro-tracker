@@ -677,6 +677,7 @@ const ProjectOverviewPage = () => {
             <EnhancedLocationSelector
               location={formData.location}
               onLocationChange={handleLocationChange}
+              cityLabel="City/ MMDA"
             />
 
 
