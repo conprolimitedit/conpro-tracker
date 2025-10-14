@@ -32,9 +32,36 @@ const BuildingTypesPage = () => {
     fetchBuildingTypes()
   }, [])
 
+  const structureOptions = [
+    'Dormitory',
+    'Hostel', 
+    'Classroom',
+    'Lecture Block',
+    'Administration',
+    'Library',
+    'Auditorium',
+    'Multi-purpose Hall',
+    'Dining Hall',
+    'Staff Flat',
+    'Bungalow',
+    'Sick Bay',
+    'Lavatories',
+    'Park',
+    'Fencewall',
+    'Other'
+  ]
+
   const fields = [
-    { name: 'buildingType', label: 'Building Type', required: true, placeholder: 'Enter building type name' },
-    { name: 'category', label: 'Category', required: true, placeholder: 'e.g., Housing, Business, Healthcare' },
+    { 
+      name: 'buildingType', 
+      label: 'Structure', 
+      required: true, 
+      type: 'select',
+      options: structureOptions,
+      placeholder: 'Select structure type',
+      allowCustom: true
+    },
+    { name: 'category', label: 'Design', required: true, placeholder: 'e.g., Housing, Business, Healthcare' },
     { name: 'code', label: 'Code', required: false, placeholder: 'Optional code (e.g., BT-001)' }
   ]
 
@@ -98,7 +125,7 @@ const BuildingTypesPage = () => {
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
-        <div className="text-lg">Loading building types...</div>
+        <div className="text-lg">Loading Structure...</div>
       </div>
     )
   }
@@ -119,7 +146,7 @@ const BuildingTypesPage = () => {
 
   return (
     <ContentCRUD
-      title="Building Types"
+      title="Structures"
       data={buildingTypesData}
       fields={fields}
       onSave={handleSave}

@@ -21,6 +21,7 @@ const ProjectOverviewPage = () => {
   const canEditProjects = user?.userRole === 'admin' || user?.userRole === 'projectManager'
   
   const [formData, setFormData] = useState({
+    institutionName: '',
     projectName: '',
     coverImage: null,
     location: {
@@ -55,7 +56,8 @@ const ProjectOverviewPage = () => {
     sitePossessionDate: '',
     duration: '',
     specialComments: '',
-    linkedProjects: [] // Added linkedProjects state
+    linkedProjects: [], // Added linkedProjects state
+    projectStage: '' // Added project_stage field
   })
 
 
@@ -193,6 +195,7 @@ const ProjectOverviewPage = () => {
       
       // Transform the project data to match the form structure
       const transformedData = {
+        institutionName: project.institution_name || '',
         projectName: project.project_name || '',
         coverImage: project.project_cover_image?.url || null,
         location: {
@@ -229,7 +232,8 @@ const ProjectOverviewPage = () => {
         duration: project.project_duration || '',
         specialComments: project.project_special_comment || '',
         linkedProjects: project.linked_projects || [],
-        revisedDate: project.revised_date || ''
+        revisedDate: project.revised_date || '',
+        projectStage: project.project_stage || ''
       }
       
    
@@ -249,21 +253,6 @@ const ProjectOverviewPage = () => {
       ...prev,
       [name]: value
     }))
-    
-    // Auto-generate slug when project name changes
-    if (name === 'projectName') {
-      const slug = value
-        .toLowerCase()
-        .replace(/[^a-z0-9\s-]/g, '') // Remove special characters except spaces and hyphens
-        .replace(/\s+/g, '-') // Replace spaces with hyphens
-        .replace(/-+/g, '-') // Replace multiple hyphens with single hyphen
-        .trim('-') // Remove leading/trailing hyphens
-      
-      setFormData(prev => ({
-        ...prev,
-        slug: slug
-      }))
-    }
   }
 
   const handleFileChange = (e) => {
@@ -380,6 +369,33 @@ const ProjectOverviewPage = () => {
     }))
   }, [])
 
+  // Auto-set projectName based on Institution Name and first Building Type
+  useEffect(() => {
+    const institution = (formData.institutionName || '').trim()
+    const firstType = (formData.buildingTypes || [])[0] || null
+    const typeName = firstType?.buildingType || ''
+    const category = firstType?.category || ''
+    const parts = [institution, typeName, category].filter(Boolean)
+    const newProjectName = parts.join(' - ')
+    if (newProjectName && newProjectName !== formData.projectName) {
+      setFormData(prev => ({ ...prev, projectName: newProjectName }))
+    }
+  }, [formData.institutionName, formData.buildingTypes])
+
+  // Auto-generate slug whenever projectName changes
+  useEffect(() => {
+    const value = formData.projectName || ''
+    const newSlug = value
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-+|-+$/g, '')
+    if (newSlug !== formData.slug) {
+      setFormData(prev => ({ ...prev, slug: newSlug }))
+    }
+  }, [formData.projectName])
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setSaving(true)
@@ -418,6 +434,7 @@ const ProjectOverviewPage = () => {
       
       // Prepare data for API - using IDs for all multi-select fields
       const projectData = {
+        institution_name: formData.institutionName,
         project_name: formData.projectName,
         project_slug: formData.slug,
         contract_date: formData.contractDate,
@@ -447,7 +464,8 @@ const ProjectOverviewPage = () => {
         planned_progress: formData.plannedProgress ? parseFloat(formData.plannedProgress) : 0,
         cumulative_progress: formData.cumulativeProgress ? parseFloat(formData.cumulativeProgress) : 0,
         project_duration: formData.duration,
-        project_completion_percentage: 0 // Start at 0%
+        project_completion_percentage: 0, // Start at 0%
+        project_stage: formData.projectStage
       }
       
       // Send data to API for processing (including image upload)
@@ -530,32 +548,47 @@ const ProjectOverviewPage = () => {
               Basic Information
             </h5>
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-               <div>
-                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                   Project Name *
-                 </label>
-                 <input
-                   type="text"
-                   name="projectName"
-                   value={formData.projectName}
-                   onChange={handleInputChange}
-                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                   required
-                 />
-               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Institution Name *
+                </label>
+                <input
+                  type="text"
+                  name="institutionName"
+                  value={formData.institutionName}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  required
+                />
+              </div>
 
-               <div>
-                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                   Slug *
-                 </label>
-                 <input
-                   type="text"
-                   name="slug"
-                   value={formData.slug}
-                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50 dark:bg-gray-600 dark:border-gray-600 dark:text-white cursor-not-allowed"
-                   readOnly
-                 />
-               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Structure
+                </label>
+                <MultiSelectDropdown
+                  options={buildingTypes}
+                  selectedItems={formData.buildingTypes}
+                  onSelectionChange={handleBuildingTypesChange}
+                  placeholder="Select structures..."
+                  searchPlaceholder="Search structures..."
+                  nameField="buildingType"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Project Name *
+                </label>
+                <input
+                  type="text"
+                  name="projectName"
+                  value={formData.projectName}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  required
+                />
+              </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -667,49 +700,124 @@ const ProjectOverviewPage = () => {
              </div>
           </div>
 
-          {/* Location Section */}
+
+
+
+
+
+
+          {/* Project Details Section */}
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
             <h5 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-              <div className="w-2 h-2 bg-green-500 rounded-full mr-3"></div>
-              Project Location
+              <div className="w-2 h-2 bg-orange-500 rounded-full mr-3"></div>
+              Project Details
             </h5>
-            
-            <EnhancedLocationSelector
-              location={formData.location}
-              onLocationChange={handleLocationChange}
-              cityLabel="City/ MMDA"
-            />
+            <div className="space-y-4">
 
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Address
+                  Project Types
+                </label>
+                <MultiSelectDropdown
+                  options={projectTypes}
+                  selectedItems={formData.projectTypes}
+                  onSelectionChange={handleProjectTypesChange}
+                  placeholder="Select project types..."
+                  searchPlaceholder="Search project types..."
+                  nameField="projectType"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Project Categories
+                </label>
+                <MultiSelectDropdown
+                  options={projectCategories}
+                  selectedItems={formData.projectCategories || []}
+                  onSelectionChange={handleProjectCategoriesChange}
+                  placeholder="Select project categories..."
+                  searchPlaceholder="Search project categories..."
+                  nameField="category"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Project Services
+                </label>
+                <MultiSelectDropdown
+                  options={projectServices}
+                  selectedItems={formData.projectServices}
+                  onSelectionChange={handleProjectServicesChange}
+                  placeholder="Select project services..."
+                  searchPlaceholder="Search project services..."
+                  nameField="serviceName"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Duration (text)
                 </label>
                 <input
                   type="text"
-                  name="address"
-                  value={formData.location.address}
-                  onChange={(e) => handleLocationChange({ ...formData.location, address: e.target.value })}
-                  placeholder="GPS or physical address"
+                  name="duration"
+                  value={formData.duration}
+                  onChange={handleInputChange}
+                  placeholder="e.g., 12 months"
                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Additional Info
+                  Project Stage
                 </label>
                 <input
                   type="text"
-                  name="additional_info"
-                  value={formData.location.additional_info}
-                  onChange={(e) => handleLocationChange({ ...formData.location, additional_info: e.target.value })}
-                  placeholder="Any notes about this location"
+                  name="projectStage"
+                  value={formData.projectStage}
+                  onChange={handleInputChange}
+                  placeholder="Enter project stage"
                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 />
+              </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Project Status
+                  </label>
+                  <select
+                    name="projectStatus"
+                    value={formData.projectStatus}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  >
+                    <option value="">Select Status</option>
+                    <option value="planning">Planning</option>
+                    <option value="in-progress">In Progress</option>
+                    <option value="completed">Completed</option>
+                    <option value="on-hold">On Hold</option>
+                    <option value="on-hold">Terminated</option>
+                    <option value="on-hold">Abandoned</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
               </div>
             </div>
           </div>
+
+
+
+
+
+
+
+
+
+
+
+
 
           {/* Stakeholders Section */}
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
@@ -807,105 +915,62 @@ const ProjectOverviewPage = () => {
             </div>
           </div>
 
-          {/* Project Details Section */}
+
+
+
+
+
+
+
+
+
+          {/* Location Section */}
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
             <h5 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-              <div className="w-2 h-2 bg-orange-500 rounded-full mr-3"></div>
-              Project Details
+              <div className="w-2 h-2 bg-green-500 rounded-full mr-3"></div>
+              Project Location
             </h5>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Building Types
-                </label>
-                <MultiSelectDropdown
-                  options={buildingTypes}
-                  selectedItems={formData.buildingTypes}
-                  onSelectionChange={handleBuildingTypesChange}
-                  placeholder="Select building types..."
-                  searchPlaceholder="Search building types..."
-                  nameField="buildingType"
-                />
-              </div>
+            
+            <EnhancedLocationSelector
+              location={formData.location}
+              onLocationChange={handleLocationChange}
+              cityLabel="City/ MMDA"
+            />
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Project Types
-                </label>
-                <MultiSelectDropdown
-                  options={projectTypes}
-                  selectedItems={formData.projectTypes}
-                  onSelectionChange={handleProjectTypesChange}
-                  placeholder="Select project types..."
-                  searchPlaceholder="Search project types..."
-                  nameField="projectType"
-                />
-              </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Project Categories
-                </label>
-                <MultiSelectDropdown
-                  options={projectCategories}
-                  selectedItems={formData.projectCategories || []}
-                  onSelectionChange={handleProjectCategoriesChange}
-                  placeholder="Select project categories..."
-                  searchPlaceholder="Search project categories..."
-                  nameField="category"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Project Services
-                </label>
-                <MultiSelectDropdown
-                  options={projectServices}
-                  selectedItems={formData.projectServices}
-                  onSelectionChange={handleProjectServicesChange}
-                  placeholder="Select project services..."
-                  searchPlaceholder="Search project services..."
-                  nameField="serviceName"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Duration (text)
+                  Address
                 </label>
                 <input
                   type="text"
-                  name="duration"
-                  value={formData.duration}
-                  onChange={handleInputChange}
-                  placeholder="e.g., 12 months"
+                  name="address"
+                  value={formData.location.address}
+                  onChange={(e) => handleLocationChange({ ...formData.location, address: e.target.value })}
+                  placeholder="GPS or physical address"
                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 />
               </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Project Status
-                  </label>
-                  <select
-                    name="projectStatus"
-                    value={formData.projectStatus}
-                    onChange={handleInputChange}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                  >
-                    <option value="">Select Status</option>
-                    <option value="planning">Planning</option>
-                    <option value="in-progress">In Progress</option>
-                    <option value="completed">Completed</option>
-                    <option value="on-hold">On Hold</option>
-                    <option value="on-hold">Terminated</option>
-                    <option value="on-hold">Abandoned</option>
-                    <option value="cancelled">Cancelled</option>
-                  </select>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Additional Info
+                </label>
+                <input
+                  type="text"
+                  name="additional_info"
+                  value={formData.location.additional_info}
+                  onChange={(e) => handleLocationChange({ ...formData.location, additional_info: e.target.value })}
+                  placeholder="Any notes about this location"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                />
               </div>
             </div>
           </div>
+
+
+
+
 
           {/* Timeline Section */}
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">

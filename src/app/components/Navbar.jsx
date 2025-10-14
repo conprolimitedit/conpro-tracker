@@ -22,7 +22,7 @@ const Navbar = () => {
     { name: 'Contractors', href: '/contentManagement/contractors' },
     { name: 'Clients', href: '/contentManagement/clients' },
     { name: 'Funding Agencies', href: '/contentManagement/funding-agencies' },
-    { name: 'Building Types', href: '/contentManagement/building-types' },
+    { name: 'Structure', href: '/contentManagement/building-types' },
     { name: 'Services', href: '/contentManagement/services' },
     { name: 'Clerk of Works', href: '/contentManagement/clerk-of-works' },
     { name: 'Project Types', href: '/contentManagement/project-types' },

@@ -18,6 +18,7 @@ const ContentCRUD = ({
   const [formData, setFormData] = useState({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
+  const [customValues, setCustomValues] = useState({})
 
   useEffect(() => {
     setItems(data || [])
@@ -27,16 +28,28 @@ const ContentCRUD = ({
   useEffect(() => {
     if (editingItem) {
       const initialData = {}
+      const initialCustomValues = {}
       fields.forEach(field => {
         initialData[field.name] = editingItem[field.name] || ''
+        if (field.type === 'select' && field.allowCustom) {
+          // Check if the current value is in the predefined options
+          const isCustomValue = !field.options.includes(editingItem[field.name])
+          initialCustomValues[field.name] = isCustomValue
+        }
       })
       setFormData(initialData)
+      setCustomValues(initialCustomValues)
     } else {
       const initialData = {}
+      const initialCustomValues = {}
       fields.forEach(field => {
         initialData[field.name] = ''
+        if (field.type === 'select' && field.allowCustom) {
+          initialCustomValues[field.name] = false
+        }
       })
       setFormData(initialData)
+      setCustomValues(initialCustomValues)
     }
     setFormError('')
   }, [editingItem, fields])
@@ -47,6 +60,26 @@ const ContentCRUD = ({
       ...prev,
       [name]: value
     }))
+  }
+
+  const handleSelectChange = (fieldName, value) => {
+    setFormData(prev => ({
+      ...prev,
+      [fieldName]: value
+    }))
+    
+    // If "Other" is selected, enable custom input
+    if (value === 'Other') {
+      setCustomValues(prev => ({
+        ...prev,
+        [fieldName]: true
+      }))
+    } else {
+      setCustomValues(prev => ({
+        ...prev,
+        [fieldName]: false
+      }))
+    }
   }
 
   const handleSubmit = async (e) => {
@@ -108,6 +141,7 @@ const ContentCRUD = ({
     setIsModalOpen(false)
     setEditingItem(null)
     setFormData({})
+    setCustomValues({})
   }
 
   const handleAddNew = () => {
@@ -302,6 +336,33 @@ const ContentCRUD = ({
                         className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                         placeholder={field.placeholder}
                       />
+                    ) : field.type === 'select' ? (
+                      <div className="space-y-2">
+                        <select
+                          name={field.name}
+                          value={customValues[field.name] ? 'Other' : (formData[field.name] || '')}
+                          onChange={(e) => handleSelectChange(field.name, e.target.value)}
+                          required={field.required}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        >
+                          <option value="">{field.placeholder}</option>
+                          {field.options.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                        {customValues[field.name] && (
+                          <input
+                            type="text"
+                            name={field.name}
+                            value={formData[field.name] || ''}
+                            onChange={handleInputChange}
+                            placeholder="Enter custom value"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                          />
+                        )}
+                      </div>
                     ) : (
                       <input
                         type={field.type || 'text'}

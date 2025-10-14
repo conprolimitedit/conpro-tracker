@@ -246,6 +246,7 @@ export async function POST(request) {
 
     // Prepare project data for insertion
     const projectData = {
+      institution_name: body.institution_name || '',
       project_name: body.project_name,
       project_slug: body.project_slug,
       project_priority: body.project_priority || 'medium',
@@ -275,7 +276,8 @@ export async function POST(request) {
       project_completion_percentage: body.project_completion_percentage || 0,
       planned_progress: typeof body.planned_progress === 'number' ? body.planned_progress : 0,
       cumulative_progress: typeof body.cumulative_progress === 'number' ? body.cumulative_progress : 0,
-      project_duration: body.project_duration || ''
+      project_duration: body.project_duration || '',
+      project_stage: body.project_stage || ''
     }
     
     console.log('📝 Prepared project data:', projectData)

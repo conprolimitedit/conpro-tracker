@@ -27,7 +27,7 @@ const ContentSidebar = () => {
   const contentItems = [
     {
       id: 'building-types',
-      name: 'Building Types',
+      name: 'Structures',
       icon: FiHome || FiIcons.FiHome || '🏠',
       path: '/contentManagement/building-types',
       description: 'Manage building classifications (Default)'
