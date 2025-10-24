@@ -9,47 +9,44 @@ import 'swiper/css/navigation'
 import 'swiper/css/pagination'
 
 const ProjectDataSummary = () => {
-  const [projects, setProjects] = useState([])
+  const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  // Fetch ALL projects from API (no filters)
+  // Fetch summary data from projects_summary API
   useEffect(() => {
-    const fetchProjects = async () => {
+    const fetchSummary = async () => {
       try {
         setLoading(true)
-        // Get all projects without any filters for summary
-        const response = await fetch('/api/projects?limit=1000')
+        const response = await fetch('/api/projects-summary')
         const data = await response.json()
         
         if (data.success) {
-          setProjects(data.projects || [])
+          setSummary(data.summary)
         } else {
-          setError(data.error || 'Failed to fetch projects')
+          setError(data.error || 'Failed to fetch projects summary')
         }
       } catch (err) {
-        console.error('Error fetching projects:', err)
-        setError('Failed to fetch projects')
+        console.error('Error fetching projects summary:', err)
+        setError('Failed to fetch projects summary')
       } finally {
         setLoading(false)
       }
     }
 
-    fetchProjects()
+    fetchSummary()
   }, []) // Only fetch once on mount
 
-  // Calculate statistics from real project data
-  const totalProjects = projects.length
-  
-  // Group projects by status and count them
-  const statusCounts = projects.reduce((acc, project) => {
-    const status = project.project_status || 'unknown'
-    acc[status] = (acc[status] || 0) + 1
-    return acc
-  }, {})
-
-  // Get distinct statuses
-  const distinctStatuses = Object.keys(statusCounts)
+  // Define all possible statuses with their configurations
+  const statusConfig = {
+    'planning': { icon: 'upcoming', color: 'purple', label: 'Planning' },
+    'in_progress': { icon: 'pending', color: 'yellow', label: 'In Progress' },
+    'completed': { icon: 'completed', color: 'green', label: 'Completed' },
+    'on_hold': { icon: 'abandoned', color: 'red', label: 'On Hold' },
+    'terminated': { icon: 'abandoned', color: 'red', label: 'Terminated' },
+    'abandoned': { icon: 'abandoned', color: 'red', label: 'Abandoned' },
+    'cancelled': { icon: 'abandoned', color: 'red', label: 'Cancelled' }
+  }
   
   // Calculate trend (mock data for now - in real app this would be from historical data)
   const getTrend = (current, previous = current - 2) => {
@@ -58,47 +55,35 @@ const ProjectDataSummary = () => {
     return { trend: 'stable', value: '0%' }
   }
 
-  // Create data cards based on actual project statuses
-  const dataCards = [
+  // Create data cards from summary data
+  const dataCards = summary ? [
     {
       title: "Total Projects",
-      value: totalProjects,
+      value: summary.total_projects,
       icon: "trending",
       color: "blue",
-      trend: getTrend(totalProjects).trend,
-      trendValue: getTrend(totalProjects).value
+      trend: getTrend(summary.total_projects).trend,
+      trendValue: getTrend(summary.total_projects).value
     },
-    ...distinctStatuses.map(status => {
-      const count = statusCounts[status]
-      const statusConfig = {
-        'planning': { icon: 'upcoming', color: 'purple', label: 'Planning' },
-        'in-progress': { icon: 'pending', color: 'yellow', label: 'In Progress' },
-        'completed': { icon: 'completed', color: 'green', label: 'Completed' },
-        'on-hold': { icon: 'abandoned', color: 'red', label: 'On Hold' },
-        'cancelled': { icon: 'abandoned', color: 'red', label: 'Cancelled' },
-        'terminated': { icon: 'abandoned', color: 'red', label: 'Terminated' },
-        'abandoned': { icon: 'abandoned', color: 'red', label: 'Abandoned' }
-      }
-      
-      const config = statusConfig[status] || { icon: 'pending', color: 'gray', label: status.charAt(0).toUpperCase() + status.slice(1) }
-      
-      return {
+    // Only show status cards that have counts > 0
+    ...Object.entries(statusConfig)
+      .filter(([status, config]) => summary[status] > 0)
+      .map(([status, config]) => ({
         title: config.label,
-        value: count,
+        value: summary[status],
         icon: config.icon,
         color: config.color,
-        trend: getTrend(count).trend,
-        trendValue: getTrend(count).value
-      }
-    })
-  ]
+        trend: getTrend(summary[status]).trend,
+        trendValue: getTrend(summary[status]).value
+      }))
+  ] : []
 
   if (loading) {
     return (
       <div className="mx-auto px-4 sm:px-6 lg:px-8 py-3">
         <div className="flex justify-center items-center h-32">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-          <span className="ml-2 text-gray-600">Loading project data...</span>
+          <span className="ml-2 text-gray-600">Loading project summary...</span>
         </div>
       </div>
     )
@@ -109,7 +94,7 @@ const ProjectDataSummary = () => {
       <div className="mx-auto px-4 sm:px-6 lg:px-8 py-3">
         <div className="flex justify-center items-center h-32">
           <div className="text-red-600 text-center">
-            <p className="font-medium">Error loading project data</p>
+            <p className="font-medium">Error loading project summary</p>
             <p className="text-sm">{error}</p>
           </div>
         </div>

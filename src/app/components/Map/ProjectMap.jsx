@@ -109,23 +109,38 @@ const ProjectMap = ({
   // Parse GPS coordinates from object or string format
   const parseCoordinates = (gpsData) => {
     try {
+      let lat, lng
+      
       // Handle object format like { lat: "8.0300284", lng: "-1.0800271" }
       if (typeof gpsData === 'object' && gpsData !== null) {
-        return [parseFloat(gpsData.lat), parseFloat(gpsData.lng)]
+        lat = parseFloat(gpsData.lat)
+        lng = parseFloat(gpsData.lng)
       }
-      
       // Handle string format like "7.9465° N, -1.0232° W" or "0.3476° N, 32.5825° E"
-      if (typeof gpsData === 'string') {
+      else if (typeof gpsData === 'string') {
         const coords = gpsData.split(',').map(coord => 
           parseFloat(coord.replace(/[°NSEW\s]/g, ''))
         )
-        return coords
+        lat = coords[0]
+        lng = coords[1]
+      }
+      else {
+        throw new Error('Invalid GPS data format')
       }
       
-      // Default fallback
-      return [7.9465, -1.0232] // Default to Ghana coordinates
+      // Validate coordinates
+      if (isNaN(lat) || isNaN(lng) || lat === null || lng === null) {
+        throw new Error('Invalid coordinates: NaN or null values')
+      }
+      
+      // Check if coordinates are within reasonable bounds (Ghana and surrounding areas)
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        throw new Error('Coordinates out of valid range')
+      }
+      
+      return [lat, lng]
     } catch (error) {
-      console.error('Error parsing coordinates:', error)
+      console.error('Error parsing coordinates:', error, 'GPS Data:', gpsData)
       return [7.9465, -1.0232] // Default to Ghana coordinates
     }
   }
@@ -215,17 +230,24 @@ const ProjectMap = ({
           
           <MapController center={center} zoom={zoom} projects={projects} isBackground={isBackground} />
 
-          {projects.map((project) => {
+          {projects.map((project, index) => {
             if (!project.project_location?.gpsCoordinates) {
               return null // Skip projects without coordinates
             }
             
             const coordinates = parseCoordinates(project.project_location.gpsCoordinates)
+            
+            // Additional validation to prevent NaN coordinates
+            if (isNaN(coordinates[0]) || isNaN(coordinates[1])) {
+              console.warn('Skipping project with invalid coordinates:', project.project_name, coordinates)
+              return null
+            }
+            
             const markerColor = getPriorityColor(project.project_priority)
             
             return (
               <Marker
-                key={project.project_id}
+                key={`${project.project_id}-${index}`}
                 position={coordinates}
                 icon={createCustomIcon(markerColor)}
                 eventHandlers={{

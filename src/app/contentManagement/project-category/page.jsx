@@ -1,13 +1,34 @@
 'use client'
 import React, { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '../../contexts/AuthContext'
 import ContentCRUD from '../../components/ContentCRUD'
 
 const ProjectCategoryPage = () => {
+  const router = useRouter()
+  const { user, loading: authLoading, isAuthenticated } = useAuth()
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [page, setPage] = useState(1)
   const limit = 10
+
+  useEffect(() => {
+    // Wait for auth to load
+    if (authLoading) return
+    
+    // Role guard: only admin, finance, and project manager
+    if (!isAuthenticated()) {
+      router.replace('/')
+      return
+    }
+    
+    const userRole = user?.userRole
+    if (!userRole || (userRole !== 'admin' && userRole !== 'finance' && userRole !== 'projectManager')) {
+      router.replace('/')
+      return
+    }
+  }, [router, authLoading, isAuthenticated, user])
 
   const fetchCategories = async (reset = true) => {
     try {
@@ -79,6 +100,15 @@ const ProjectCategoryPage = () => {
     }
   }
 
+  // Show loading while auth is loading
+  if (authLoading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="text-lg">Loading...</div>
+      </div>
+    )
+  }
+
   if (loading && categories.length === 0) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -96,6 +126,9 @@ const ProjectCategoryPage = () => {
     )
   }
 
+  // Determine if user can perform actions (admin and finance can edit, project manager is read-only)
+  const canEdit = user?.userRole === 'admin' || user?.userRole === 'finance'
+
   return (
     <>
       <ContentCRUD
@@ -105,6 +138,7 @@ const ProjectCategoryPage = () => {
         onSave={handleSave}
         onDelete={handleDelete}
         searchFields={['category', 'description']}
+        showActions={canEdit}
       />
       <div className="mt-4 flex justify-center">
         <button

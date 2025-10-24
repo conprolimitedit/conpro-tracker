@@ -17,22 +17,32 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true)
   const [token, setToken] = useState(null)
 
-  // Initialize auth state from localStorage
+  // Initialize auth: simple rule -> if no token or invalid token, redirect to '/'
   useEffect(() => {
     const initializeAuth = async () => {
       try {
-        const storedToken = localStorage.getItem('user')
-        if (storedToken) {
-          setToken(storedToken)
-          // Verify token and fetch fresh user data from database
-          await verifyToken(storedToken)
+        const storedToken = typeof window !== 'undefined' ? localStorage.getItem('user') : null
+        if (!storedToken) {
+          setToken(null); setUser(null)
+          if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+            window.location.replace('/')
+          }
+          return
+        }
+        setToken(storedToken)
+        const ok = await verifyToken(storedToken)
+        if (!ok && typeof window !== 'undefined' && window.location.pathname !== '/') {
+          localStorage.removeItem('user')
+          setToken(null); setUser(null)
+          window.location.replace('/')
         }
       } catch (error) {
         console.error('Auth initialization error:', error)
-        // Clear invalid token
-        localStorage.removeItem('user')
-        setToken(null)
-        setUser(null)
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('user')
+          setToken(null); setUser(null)
+          if (window.location.pathname !== '/') window.location.replace('/')
+        }
       } finally {
         setLoading(false)
       }
@@ -61,15 +71,11 @@ export const AuthProvider = ({ children }) => {
       }
       
       // Token is invalid, remove it
-      localStorage.removeItem('user')
-      setToken(null)
-      setUser(null)
+      setToken(null); setUser(null)
       return false
     } catch (error) {
       console.error('Token verification error:', error)
-      localStorage.removeItem('user')
-      setToken(null)
-      setUser(null)
+      setToken(null); setUser(null)
       return false
     }
   }
@@ -110,10 +116,12 @@ export const AuthProvider = ({ children }) => {
 
   // Logout function
   const logout = () => {
-    // Remove ONLY the token from localStorage
-    localStorage.removeItem('user')
-    setToken(null)
-    setUser(null)
+    try { fetch('/api/users/logout', { method: 'POST' }) } catch {}
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('user')
+      setToken(null); setUser(null)
+      window.location.replace('/')
+    }
     console.log('✅ Logout successful - Token removed from localStorage')
   }
 

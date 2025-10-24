@@ -89,15 +89,24 @@ export async function POST(request) {
 
     console.log('✅ User logged in successfully:', email)
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       message: 'Login successful',
       token,
       user: userWithoutPassword
     })
+    // Set HttpOnly auth cookie for middleware
+    response.cookies.set('auth_token', token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 30 // 30 days
+    })
+    return response
 
   } catch (error) {
-    console.error('❌ Error in POST /api/auth/login:', error)
+    console.error('❌ Error in POST /api/auth/:', error)
     return NextResponse.json({ 
       success: false,
       error: 'Internal server error' 

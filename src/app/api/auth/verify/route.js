@@ -16,16 +16,16 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey)
 // POST - Verify JWT token
 export async function POST(request) {
   try {
-    const authHeader = request.headers.get('authorization')
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({ 
-        success: false,
-        error: 'No token provided' 
-      }, { status: 401 })
-    }
+    // Prefer HttpOnly cookie set by login
+    const cookieToken = request.cookies.get('auth_token')?.value
+    const headerToken = request.headers.get('authorization')?.startsWith('Bearer ')
+      ? request.headers.get('authorization').substring(7)
+      : null
+    const token = cookieToken || headerToken
 
-    const token = authHeader.substring(7) // Remove 'Bearer ' prefix
+    if (!token) {
+      return NextResponse.json({ success: false, error: 'No token provided' }, { status: 401 })
+    }
 
     console.log('🔍 Verifying token...')
 

@@ -8,6 +8,31 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SERVICE_ROLE_KEY
 )
 
+// Helpers for projects_summary adjustments
+const statusToColumn = (status) => status?.toLowerCase()?.replace(/\s+/g, '-').replace(/-/g, '_') || null
+async function readSummary(sp) {
+  const { data, error } = await sp.from('projects_summary').select('*').eq('id', 1).single()
+  if (error) throw error
+  return data
+}
+async function writeSummary(sp, updated) {
+  const { error } = await sp
+    .from('projects_summary')
+    .update({
+      planning: updated.planning,
+      in_progress: updated.in_progress,
+      completed: updated.completed,
+      on_hold: updated.on_hold,
+      terminated: updated.terminated,
+      abandoned: updated.abandoned,
+      cancelled: updated.cancelled,
+      total_projects: updated.total_projects,
+      last_updated: new Date().toISOString(),
+    })
+    .eq('id', 1)
+  if (error) throw error
+}
+
 // GET /api/projects/slug/[slug] - Get a specific project by slug
 export async function GET(request, { params }) {
   try {
@@ -215,6 +240,13 @@ export async function PUT(request, { params }) {
     
     console.log('📝 Prepared update data:', updateData)
     
+    // Get old status for summary adjustment
+    const { data: beforeProject } = await supabase
+      .from('projects')
+      .select('project_status')
+      .eq('project_slug', slug)
+      .single()
+
     const { data: updatedProject, error } = await supabase
       .from('projects')
       .update(updateData)
@@ -238,6 +270,23 @@ export async function PUT(request, { params }) {
     }
 
     console.log('✅ Project updated successfully by slug:', updatedProject[0].project_name)
+
+    // Adjust projects_summary for status change
+    try {
+      const oldStatus = beforeProject?.project_status
+      const newStatus = updatedProject[0]?.project_status
+      const oldCol = statusToColumn(oldStatus)
+      const newCol = statusToColumn(newStatus)
+      if (oldCol !== newCol) {
+        const summary = await readSummary(supabase)
+        const next = { ...summary }
+        if (oldCol) next[oldCol] = Math.max(0, (Number(next[oldCol]) || 0) - 1)
+        if (newCol) next[newCol] = (Number(next[newCol]) || 0) + 1
+        await writeSummary(supabase, next)
+      }
+    } catch (sumErr) {
+      console.warn('⚠️ Failed to update projects_summary after update:', sumErr?.message)
+    }
     
     return NextResponse.json({
       success: true,
@@ -272,6 +321,13 @@ export async function DELETE(request, { params }) {
       coverPath = existing?.project_cover_image?.path || null
     } catch {}
 
+    // Fetch status for summary decrement
+    const { data: beforeProject } = await supabase
+      .from('projects')
+      .select('project_status')
+      .eq('project_slug', slug)
+      .single()
+
     const { data: deletedProject, error } = await supabase
       .from('projects')
       .delete()
@@ -295,6 +351,18 @@ export async function DELETE(request, { params }) {
     }
 
     console.log('✅ Project deleted successfully by slug:', deletedProject[0].project_name)
+    try {
+      const col = statusToColumn(beforeProject?.project_status)
+      if (col) {
+        const summary = await readSummary(supabase)
+        const next = { ...summary }
+        next[col] = Math.max(0, (Number(next[col]) || 0) - 1)
+        next.total_projects = Math.max(0, (Number(next.total_projects) || 0) - 1)
+        await writeSummary(supabase, next)
+      }
+    } catch (sumErr) {
+      console.warn('⚠️ Failed to update projects_summary after delete:', sumErr?.message)
+    }
     
     // Attempt to delete cover image from storage (best-effort)
     try {

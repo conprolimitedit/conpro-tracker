@@ -8,6 +8,73 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SERVICE_ROLE_KEY
 )
 
+// --- Helpers for projects_summary updates ---
+const statusToColumn = (status) => {
+  if (!status) return null
+  return status.toLowerCase().replace(/\s+/g, '-').replace(/-/g, '_')
+}
+
+async function readSummary() {
+  const { data, error } = await supabase
+    .from('projects_summary')
+    .select('*')
+    .eq('id', 1)
+    .single()
+  if (error) throw error
+  return data
+}
+
+async function writeSummary(updated) {
+  const { error } = await supabase
+    .from('projects_summary')
+    .update({
+      planning: updated.planning,
+      in_progress: updated.in_progress,
+      completed: updated.completed,
+      on_hold: updated.on_hold,
+      terminated: updated.terminated,
+      abandoned: updated.abandoned,
+      cancelled: updated.cancelled,
+      total_projects: updated.total_projects,
+      last_updated: new Date().toISOString(),
+    })
+    .eq('id', 1)
+  if (error) throw error
+}
+
+async function incrementSummaryFor(status) {
+  const column = statusToColumn(status)
+  if (!column) return
+  const summary = await readSummary()
+  const next = { ...summary }
+  next[column] = (Number(next[column]) || 0) + 1
+  next.total_projects = (Number(next.total_projects) || 0) + 1
+  await writeSummary(next)
+}
+
+async function adjustSummaryOnUpdate(oldStatus, newStatus) {
+  const oldCol = statusToColumn(oldStatus)
+  const newCol = statusToColumn(newStatus)
+  if (!oldCol && !newCol) return
+  if (oldCol === newCol) return
+  const summary = await readSummary()
+  const next = { ...summary }
+  if (oldCol) next[oldCol] = Math.max(0, (Number(next[oldCol]) || 0) - 1)
+  if (newCol) next[newCol] = (Number(next[newCol]) || 0) + 1
+  // total unchanged on update
+  await writeSummary(next)
+}
+
+async function decrementSummaryFor(status) {
+  const column = statusToColumn(status)
+  if (!column) return
+  const summary = await readSummary()
+  const next = { ...summary }
+  next[column] = Math.max(0, (Number(next[column]) || 0) - 1)
+  next.total_projects = Math.max(0, (Number(next.total_projects) || 0) - 1)
+  await writeSummary(next)
+}
+
 // GET /api/projects - Get all projects (paginated)
 export async function GET(request) {
   try {
@@ -35,9 +102,8 @@ export async function GET(request) {
     const fundingAgencyId = searchParams.get('fundingAgencyId') || ''
     const projectManagerId = searchParams.get('projectManagerId') || ''
     const projectCoordinatorId = searchParams.get('projectCoordinatorId') || ''
-    const region = searchParams.get('region') || ''
-    const city = searchParams.get('city') || ''
-    const town = searchParams.get('town') || ''
+    const locationType = searchParams.get('locationType') || ''
+    const locationValue = searchParams.get('locationValue') || ''
     const search = searchParams.get('search') || ''
 
     // Base query
@@ -83,19 +149,13 @@ export async function GET(request) {
     if (projectCoordinatorId) {
       query = query.contains('project_coordinators', [projectCoordinatorId])
     }
-    if (region) {
-      query = query.contains('project_location', { region })
-    }
-    if (city) {
-      query = query.contains('project_location', { city })
-    }
-    if (town) {
-      query = query.contains('project_location', { town })
+    if (locationType && locationValue) {
+      query = query.eq(`project_location->>${locationType}`, locationValue)
     }
     if (search) {
-      // Search in name or description
+      // Restrict search to project_name and institution_name only
       const pattern = `%${search}%`
-      query = query.or(`project_name.ilike.${pattern},project_description.ilike.${pattern}`)
+      query = query.or(`project_name.ilike.${pattern},institution_name.ilike.${pattern}`)
     }
 
     // Apply pagination last
@@ -297,6 +357,12 @@ export async function POST(request) {
     }
 
     console.log('✅ Project created successfully:', newProject)
+    // Update projects_summary (increment new status, total)
+    try {
+      await incrementSummaryFor(newProject[0]?.project_status)
+    } catch (sumErr) {
+      console.warn('⚠️ Failed to update projects_summary after create:', sumErr?.message)
+    }
     
     return NextResponse.json({
       success: true,

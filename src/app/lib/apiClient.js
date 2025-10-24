@@ -24,7 +24,7 @@ class ApiClient {
         localStorage.removeItem('token')
         localStorage.removeItem('user')
         // Redirect to login if not already there
-        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+        if (typeof window !== 'undefined' && !window.location.pathname.includes('/')) {
           window.location.href = '/'
         }
       }
@@ -66,7 +66,7 @@ class ApiClient {
 
   // User-specific methods
   async login(email, password) {
-    return this.post('/api/users/login', { email, password })
+    return this.post('/api/users/', { email, password })
   }
 
   async loadUser() {

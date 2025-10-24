@@ -1,9 +1,13 @@
 'use client'
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { FiMapPin, FiCalendar, FiUser, FiClock, FiEye, FiSearch, FiFilter, FiDollarSign, FiMap, FiImage, FiList, FiChevronDown, FiChevronRight, FiPlus } from 'react-icons/fi'
+import { useScroll, useMotionValueEvent } from 'framer-motion'
 import ProjectMap from '../Map/ProjectMap'
-import ProjectDataSummary from '../Projects/ProjectDataSummary'
+
+import LocationSearchDropdown from '../LocationSearchDropdown'
+import ProjectSearchDropdown from '../Projects/ProjectSearchDropdown'
+import ProjectList from '../Projects/ProjectList'
 import { MdCancel } from "react-icons/md";
 
 const ProjectDashboardFixed = () => {
@@ -15,6 +19,7 @@ const ProjectDashboardFixed = () => {
   const [projects, setProjects] = useState([])
   const [filteredProjects, setFilteredProjects] = useState([])
   const [loading, setLoading] = useState(true)
+  const [initialLoad, setInitialLoad] = useState(true)
   const [filtering, setFiltering] = useState(false)
   
   // Pagination state
@@ -29,10 +34,28 @@ const ProjectDashboardFixed = () => {
   const [locations, setLocations] = useState({
     countries: [],
     regions: [],
-    cities: [],
-    towns: []
+    mmdas: [],
+    city_towns: []
   })
   const [searchTerm, setSearchTerm] = useState('')
+  const [selectedLocation, setSelectedLocation] = useState(null)
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
+  const [totalProjectsCount, setTotalProjectsCount] = useState(0)
+  const [isSearching, setIsSearching] = useState(false)
+  const [hasMounted, setHasMounted] = useState(false)
+  
+  // Scroll tracking refs (list container and its inner content)
+  const listRef = useRef(null)
+  const contentRef = useRef(null)
+  const canLoadMoreRef = useRef(true)
+  // Map view scroll tracking refs
+  const mapListRef = useRef(null)
+  const mapContentRef = useRef(null)
+
+  // Ensure refs are hydrated before wiring scroll tracking (avoids Next hydration warning)
+  useEffect(() => {
+    setHasMounted(true)
+  }, [])
   const [statusFilter, setStatusFilter] = useState('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [clientFilter, setClientFilter] = useState('all') // stores client id
@@ -42,20 +65,41 @@ const ProjectDashboardFixed = () => {
   const [buildingTypeFilter, setBuildingTypeFilter] = useState('all') // building type id
   const [projectTypeFilter, setProjectTypeFilter] = useState('all') // project type id
   const [projectCategoryFilter, setProjectCategoryFilter] = useState('all')
-  const [regionFilter, setRegionFilter] = useState('all')
-  const [cityFilter, setCityFilter] = useState('all')
-  const [townFilter, setTownFilter] = useState('all')
+  // Removed individual location filters - now using locationSearch
   const [fundingAgencyFilter, setFundingAgencyFilter] = useState('all')
   const [projectManagerFilter, setProjectManagerFilter] = useState('all')
   const [projectCoordinatorFilter, setProjectCoordinatorFilter] = useState('all')
   const [showMap, setShowMap] = useState(true)
   const [showFilters, setShowFilters] = useState(false) // Changed to false by default
   const [viewMode, setViewMode] = useState('map')
+  // Location filter is inline (no modal)
   const [expandedFilterGroups, setExpandedFilterGroups] = useState({
-    location: true,
     stakeholders: false,
     projectDetails: false
   })
+
+  // Debounced search effects with loading state
+  useEffect(() => {
+    if (searchTerm !== debouncedSearchTerm) {
+      setIsSearching(true)
+    }
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm)
+      setIsSearching(false)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [searchTerm, debouncedSearchTerm])
+
+  // Location selection handlers
+  const handleLocationSelect = useCallback((location) => {
+    setSelectedLocation(location)
+    setFiltering(true)
+    setCurrentPage(1)
+  }, [])
+
+  const handleLocationClear = useCallback(() => {
+    setSelectedLocation(null)
+  }, [])
 
   // Content options fetched from database for dropdowns
   const [clientsOptions, setClientsOptions] = useState([])
@@ -74,30 +118,68 @@ const ProjectDashboardFixed = () => {
   const extractLocations = (projects) => {
     const countries = new Set()
     const regions = new Set()
-    const cities = new Set()
-    const towns = new Set()
+    const mmdas = new Set()
+    const cityTowns = new Set()
 
     projects.forEach(project => {
       if (project.project_location) {
         if (project.project_location.country) countries.add(project.project_location.country)
         if (project.project_location.region) regions.add(project.project_location.region)
-        if (project.project_location.city) cities.add(project.project_location.city)
-        if (project.project_location.town) towns.add(project.project_location.town)
+        if (project.project_location.mmda) mmdas.add(project.project_location.mmda)
+        if (project.project_location.city_town) cityTowns.add(project.project_location.city_town)
       }
     })
 
     setLocations({
       countries: Array.from(countries).sort(),
       regions: Array.from(regions).sort(),
-      cities: Array.from(cities).sort(),
-      towns: Array.from(towns).sort()
+      mmdas: Array.from(mmdas).sort(),
+      city_towns: Array.from(cityTowns).sort()
     })
+  }
+
+  // Fetch total count
+  const fetchTotalCount = async () => {
+    try {
+      const params = new URLSearchParams()
+      if (debouncedSearchTerm) params.set('search', debouncedSearchTerm)
+      if (selectedLocation) {
+        params.set('locationType', selectedLocation.type)
+        params.set('locationValue', selectedLocation.value)
+      }
+      if (statusFilter !== 'all') params.set('status', statusFilter)
+      if (priorityFilter !== 'all') params.set('priority', priorityFilter)
+      if (clientFilter !== 'all') params.set('clientId', String(clientFilter))
+      if (contractorFilter !== 'all') params.set('contractorId', String(contractorFilter))
+      if (clerkOfWorkFilter !== 'all') params.set('cowId', String(clerkOfWorkFilter))
+      if (projectServiceFilter !== 'all') params.set('serviceId', String(projectServiceFilter))
+      if (buildingTypeFilter !== 'all') params.set('buildingTypeId', String(buildingTypeFilter))
+      if (projectTypeFilter !== 'all') params.set('projectTypeId', String(projectTypeFilter))
+      if (projectCategoryFilter !== 'all') params.set('projectCategoryId', String(projectCategoryFilter))
+      if (fundingAgencyFilter !== 'all') params.set('fundingAgencyId', String(fundingAgencyFilter))
+      if (projectManagerFilter !== 'all') params.set('projectManagerId', String(projectManagerFilter))
+      if (projectCoordinatorFilter !== 'all') params.set('projectCoordinatorId', String(projectCoordinatorFilter))
+
+      const response = await fetch(`/api/projects/count?${params.toString()}`)
+      const data = await response.json()
+      
+      if (data.success) {
+        setTotalProjectsCount(data.totalCount)
+        console.log('Total count updated:', data.totalCount)
+      }
+    } catch (error) {
+      console.error('Error fetching total count:', error)
+    }
   }
 
   // Fetch projects data from API with pagination
   const buildQueryParams = () => {
     const params = new URLSearchParams()
-    if (searchTerm) params.set('search', searchTerm)
+    if (debouncedSearchTerm) params.set('search', debouncedSearchTerm)
+    if (selectedLocation) {
+      params.set('locationType', selectedLocation.type)
+      params.set('locationValue', selectedLocation.value)
+    }
     if (statusFilter !== 'all') params.set('status', statusFilter)
     if (priorityFilter !== 'all') params.set('priority', priorityFilter)
     if (clientFilter !== 'all') params.set('clientId', String(clientFilter))
@@ -110,11 +192,10 @@ const ProjectDashboardFixed = () => {
     if (fundingAgencyFilter !== 'all') params.set('fundingAgencyId', String(fundingAgencyFilter))
     if (projectManagerFilter !== 'all') params.set('projectManagerId', String(projectManagerFilter))
     if (projectCoordinatorFilter !== 'all') params.set('projectCoordinatorId', String(projectCoordinatorFilter))
-    if (regionFilter !== 'all') params.set('region', regionFilter)
-    if (cityFilter !== 'all') params.set('city', cityFilter)
-    if (townFilter !== 'all') params.set('town', townFilter)
     return params
   }
+
+  let activeController = useRef(null)
 
   const fetchProjects = async (page = 1, reset = false) => {
     try {
@@ -127,26 +208,34 @@ const ProjectDashboardFixed = () => {
         setLoadingMore(true)
       }
 
+      // Abort in-flight request to avoid race conditions
+      if (activeController.current) {
+        activeController.current.abort()
+      }
+      const controller = new AbortController()
+      activeController.current = controller
+
       const params = buildQueryParams()
       params.set('page', String(page))
       params.set('limit', String(itemsPerPage))
-      const response = await fetch(`/api/projects?${params.toString()}`)
+      const response = await fetch(`/api/projects?${params.toString()}` , { signal: controller.signal })
       if (response.ok) {
         const data = await response.json()
         const newProjects = data.projects || []
+        console.log('Fetched projects:', newProjects.length, 'Total count:', totalProjectsCount)
         
         if (reset) {
           setAllProjects(newProjects)
           setProjects(newProjects)
           setFilteredProjects(newProjects)
-          setDisplayedProjects(newProjects.slice(0, itemsPerPage))
+          setDisplayedProjects(newProjects)
           extractLocations(newProjects)
         } else {
           const updatedProjects = [...allProjects, ...newProjects]
           setAllProjects(updatedProjects)
           setProjects(updatedProjects)
           setFilteredProjects(updatedProjects)
-          setDisplayedProjects(updatedProjects.slice(0, (currentPage + 1) * itemsPerPage))
+          setDisplayedProjects(updatedProjects)
         }
         
         setHasMore(newProjects.length === itemsPerPage)
@@ -197,16 +286,14 @@ const ProjectDashboardFixed = () => {
       setFundingAgencyFilter(get('fundingAgencyId') || 'all')
       setProjectManagerFilter(get('projectManagerId') || 'all')
       setProjectCoordinatorFilter(get('projectCoordinatorId') || 'all')
-      setRegionFilter(get('region') || 'all')
-      setCityFilter(get('city') || 'all')
-      setTownFilter(get('town') || 'all')
       setSearchTerm(get('search') || '')
+      // Location will be handled by selectedLocation state
     } catch {}
 
-    fetchProjects(1, true)
+    fetchProjects(1, true).finally(() => setInitialLoad(false))
   }, [])
 
-  // Sync URL and refetch when filters/search change
+  // Sync URL and refetch when filters/search change - keep URL in sync
   useEffect(() => {
     const params = buildQueryParams()
     // reset page on filter changes
@@ -214,9 +301,24 @@ const ProjectDashboardFixed = () => {
     params.set('limit', String(itemsPerPage))
     const url = `${pathname}?${params.toString()}`
     router.replace(url)
+    
+    // Only refetch if it's a significant filter change, not just search
+    const isSignificantChange = selectedLocation || statusFilter !== 'all' || priorityFilter !== 'all' || 
+      clientFilter !== 'all' || contractorFilter !== 'all' || clerkOfWorkFilter !== 'all' ||
+      projectServiceFilter !== 'all' || buildingTypeFilter !== 'all' || projectTypeFilter !== 'all' ||
+      projectCategoryFilter !== 'all' || fundingAgencyFilter !== 'all' || projectManagerFilter !== 'all' ||
+      projectCoordinatorFilter !== 'all'
+    
+    if (isSignificantChange) {
     fetchProjects(1, true)
+    } else if (debouncedSearchTerm) {
+      // For search-only changes, just refetch without full reset
+      fetchProjects(1, true)
+    }
+    
+    fetchTotalCount()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, statusFilter, priorityFilter, clientFilter, contractorFilter, clerkOfWorkFilter, projectServiceFilter, buildingTypeFilter, projectTypeFilter, projectCategoryFilter, regionFilter, cityFilter, townFilter, fundingAgencyFilter, projectManagerFilter, projectCoordinatorFilter])
+  }, [debouncedSearchTerm, selectedLocation, statusFilter, priorityFilter, clientFilter, contractorFilter, clerkOfWorkFilter, projectServiceFilter, buildingTypeFilter, projectTypeFilter, projectCategoryFilter, fundingAgencyFilter, projectManagerFilter, projectCoordinatorFilter])
 
   // Fetch content options for dropdowns
   useEffect(() => {
@@ -411,17 +513,7 @@ const ProjectDashboardFixed = () => {
     return [...new Set(categoryNames)]
   }
 
-  const getUniqueRegions = () => {
-    return locations.regions
-  }
-
-  const getUniqueCities = () => {
-    return locations.cities
-  }
-
-  const getUniqueTowns = () => {
-    return locations.towns
-  }
+  // Removed location filter functions - now using locationSearch
 
   const getUniqueFundingAgencies = () => {
     const agencyNames = projects.flatMap(project => 
@@ -444,122 +536,8 @@ const ProjectDashboardFixed = () => {
     return [...new Set(coordinatorNames)]
   }
 
-  // Filter projects based on search and filters
-  useEffect(() => {
-    let filtered = projects
-
-    if (searchTerm) {
-      filtered = filtered.filter(project => {
-        const clientNames = getNamesFromStakeholders(project.project_clients, 'clientName')
-        const contractorNames = getNamesFromStakeholders(project.contractors, 'fullName')
-        const serviceNames = getNamesFromStakeholders(project.project_services, 'serviceName')
-        
-        return (
-          project.project_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          project.project_description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          clientNames.some(name => name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-          contractorNames.some(name => name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-          serviceNames.some(name => name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-          project.project_location?.city?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          project.project_location?.region?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          project.project_location?.country?.toLowerCase().includes(searchTerm.toLowerCase())
-        )
-      })
-    }
-
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(project => 
-        project.project_status?.toLowerCase() === statusFilter.toLowerCase()
-      )
-    }
-
-    if (priorityFilter !== 'all') {
-      filtered = filtered.filter(project => 
-        project.project_priority?.toLowerCase() === priorityFilter.toLowerCase()
-      )
-    }
-
-    if (clientFilter !== 'all') {
-      filtered = filtered.filter(project => 
-        getNamesFromStakeholders(project.project_clients, 'clientName').includes(clientFilter)
-      )
-    }
-
-    if (contractorFilter !== 'all') {
-      filtered = filtered.filter(project => 
-        getNamesFromStakeholders(project.contractors, 'fullName').includes(contractorFilter)
-      )
-    }
-
-    if (clerkOfWorkFilter !== 'all') {
-      filtered = filtered.filter(project => 
-        getNamesFromStakeholders(project.clerk_of_works, 'fullName').includes(clerkOfWorkFilter)
-      )
-    }
-
-    if (projectServiceFilter !== 'all') {
-      filtered = filtered.filter(project => 
-        getNamesFromStakeholders(project.project_services, 'serviceName').includes(projectServiceFilter)
-      )
-    }
-
-    if (buildingTypeFilter !== 'all') {
-      filtered = filtered.filter(project => 
-        getNamesFromStakeholders(project.building_types, 'buildingType').includes(buildingTypeFilter)
-      )
-    }
-
-    if (projectTypeFilter !== 'all') {
-      filtered = filtered.filter(project => 
-        getNamesFromStakeholders(project.project_types, 'projectType').includes(projectTypeFilter)
-      )
-    }
-
-    if (projectCategoryFilter !== 'all') {
-      filtered = filtered.filter(project => 
-        getNamesFromStakeholders(project.project_categories, 'category').includes(projectCategoryFilter)
-      )
-    }
-
-    if (regionFilter !== 'all') {
-      filtered = filtered.filter(project => 
-        project.project_location?.region === regionFilter
-      )
-    }
-
-    if (cityFilter !== 'all') {
-      filtered = filtered.filter(project => 
-        project.project_location?.city === cityFilter
-      )
-    }
-
-    if (townFilter !== 'all') {
-      filtered = filtered.filter(project => 
-        project.project_location?.town === townFilter
-      )
-    }
-
-    if (fundingAgencyFilter !== 'all') {
-      filtered = filtered.filter(project => 
-        getNamesFromStakeholders(project.funding_agencies, 'agencyName').includes(fundingAgencyFilter)
-      )
-    }
-
-    if (projectManagerFilter !== 'all') {
-      filtered = filtered.filter(project => 
-        getNamesFromStakeholders(project.project_managers, 'managerName').includes(projectManagerFilter)
-      )
-    }
-
-    if (projectCoordinatorFilter !== 'all') {
-      filtered = filtered.filter(project => 
-        getNamesFromStakeholders(project.project_coordinators, 'fullName').includes(projectCoordinatorFilter)
-      )
-    }
-
-    setFilteredProjects(filtered)
-    setDisplayedProjects(filtered.slice(0, currentPage * itemsPerPage))
-  }, [searchTerm, statusFilter, priorityFilter, clientFilter, contractorFilter, clerkOfWorkFilter, projectServiceFilter, buildingTypeFilter, projectTypeFilter, projectCategoryFilter, regionFilter, cityFilter, townFilter, fundingAgencyFilter, projectManagerFilter, projectCoordinatorFilter, projects, currentPage, itemsPerPage])
+  // Remove client-side filtering since we're doing server-side filtering
+  // The API already returns filtered results
 
   const handleProjectClick = (project) => {
     setExpandedProject(expandedProject === project.project_id ? null : project.project_id)
@@ -569,17 +547,49 @@ const ProjectDashboardFixed = () => {
     router.push(`/projects/${project.project_slug}/overview`)
   }
 
-  // Infinite scroll effect
-  useEffect(() => {
-    const handleScroll = () => {
-      if (window.innerHeight + document.documentElement.scrollTop >= document.documentElement.offsetHeight - 1000) {
+  // Track scroll progress of the project list container against its content
+  // Scroll progress for list view (guard until refs are attached)
+  const canWireListScroll = hasMounted && viewMode === 'list' && listRef.current && contentRef.current
+  const { scrollYProgress: listScrollYProgress } = useScroll({
+    container: canWireListScroll ? listRef : undefined,
+    target: canWireListScroll ? contentRef : undefined,
+    offset: ["start end", "end end"]
+  })
+
+  // Scroll progress for map view sidebar list (guard until refs are attached)
+  const canWireMapScroll = hasMounted && viewMode === 'map' && mapListRef.current && mapContentRef.current
+  const { scrollYProgress: mapScrollYProgress } = useScroll({
+    container: canWireMapScroll ? mapListRef : undefined,
+    target: canWireMapScroll ? mapContentRef : undefined,
+    offset: ["start end", "end end"]
+  })
+
+  // Trigger load more when near the end of the container's scroll
+  // Load more for list view
+  useMotionValueEvent(listScrollYProgress, 'change', (value) => {
+    if (!hasMounted || viewMode !== 'list' || !canWireListScroll) return
+    if (value < 0.9) {
+      canLoadMoreRef.current = true
+      return
+    }
+    if (value >= 0.98 && canLoadMoreRef.current && hasMore && !loadingMore) {
+      canLoadMoreRef.current = false
+      loadMoreProjects()
+    }
+  })
+
+  // Load more for map view
+  useMotionValueEvent(mapScrollYProgress, 'change', (value) => {
+    if (!hasMounted || viewMode !== 'map' || !canWireMapScroll) return
+    if (value < 0.9) {
+      canLoadMoreRef.current = true
+      return
+    }
+    if (value >= 0.98 && canLoadMoreRef.current && hasMore && !loadingMore) {
+      canLoadMoreRef.current = false
         loadMoreProjects()
       }
-    }
-
-    window.addEventListener('scroll', handleScroll)
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [loadingMore, hasMore, currentPage])
+  })
 
   const toggleFilterGroup = (groupName) => {
     setExpandedFilterGroups(prev => ({
@@ -634,6 +644,131 @@ const ProjectDashboardFixed = () => {
     return images
   }
 
+  // Map Sidebar Skeleton Component
+  const MapSidebarSkeleton = () => (
+    <div className="bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 p-4 animate-pulse">
+      <div className="flex justify-between items-start mb-3">
+        <div className="flex-1">
+          <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded mb-1 w-4/5"></div>
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded mb-2 w-3/4"></div>
+        </div>
+        <div className="flex items-center space-x-2">
+          <div className="h-6 bg-gray-200 dark:bg-gray-600 rounded-full w-16"></div>
+          <div className="w-4 h-4 bg-gray-200 dark:bg-gray-600 rounded"></div>
+        </div>
+      </div>
+
+      {/* Progress bars */}
+      <div className="mb-3">
+        <div className="flex justify-between items-center mb-1">
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-16"></div>
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-8"></div>
+        </div>
+        <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2 mb-2">
+          <div className="bg-gray-300 dark:bg-gray-500 h-2 rounded-full w-3/4"></div>
+        </div>
+        <div className="flex justify-between items-center mb-1">
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-14"></div>
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-8"></div>
+        </div>
+        <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2 mb-4">
+          <div className="bg-gray-300 dark:bg-gray-500 h-2 rounded-full w-1/2"></div>
+        </div>
+      </div>
+
+      {/* Details */}
+      <div className="space-y-2 text-xs">
+        <div className="flex justify-between">
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-12"></div>
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-16"></div>
+        </div>
+        <div className="flex justify-between">
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-14"></div>
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-20"></div>
+        </div>
+        <div className="flex justify-between">
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-16"></div>
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-12"></div>
+        </div>
+      </div>
+
+      {/* Bottom section */}
+      <div className="mt-3 pt-2 border-t border-gray-200 dark:border-gray-600">
+        <div className="flex justify-between items-center">
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-20"></div>
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-10"></div>
+        </div>
+      </div>
+    </div>
+  )
+  const ProjectSkeleton = () => (
+    <div className="bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 p-4 w-full md:w-[calc(50%-0.5rem)] lg:w-[calc(33.333%-0.5rem)] animate-pulse">
+      {/* Header */}
+      <div className="mb-3">
+        <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded mb-2 w-4/5"></div>
+        <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded mb-2 w-3/4"></div>
+        <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded mb-4 w-1/2"></div>
+      </div>
+      
+      {/* Progress bars */}
+      <div className="mb-3">
+        <div className="flex justify-between items-center mb-1">
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-20"></div>
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-8"></div>
+        </div>
+        <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2 mb-2">
+          <div className="bg-gray-300 dark:bg-gray-500 h-2 rounded-full w-3/4"></div>
+        </div>
+        <div className="flex justify-between items-center mb-1">
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-16"></div>
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-8"></div>
+        </div>
+        <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2 mb-4">
+          <div className="bg-gray-300 dark:bg-gray-500 h-2 rounded-full w-1/2"></div>
+        </div>
+      </div>
+
+      {/* Image placeholder */}
+      <div className="mb-3">
+        <div className="w-full h-32 bg-gray-200 dark:bg-gray-600 rounded-lg"></div>
+      </div>
+
+      {/* Details */}
+      <div className="space-y-2 mb-3">
+        <div className="flex items-center space-x-2">
+          <div className="w-3 h-3 bg-gray-200 dark:bg-gray-600 rounded"></div>
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-1/2"></div>
+        </div>
+        <div className="flex items-center space-x-2">
+          <div className="w-3 h-3 bg-gray-200 dark:bg-gray-600 rounded"></div>
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-2/3"></div>
+        </div>
+        <div className="flex items-center space-x-2">
+          <div className="w-3 h-3 bg-gray-200 dark:bg-gray-600 rounded"></div>
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-1/3"></div>
+        </div>
+      </div>
+
+      {/* Bottom section */}
+      <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
+        <div className="flex justify-between items-center">
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-24"></div>
+          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-12"></div>
+        </div>
+      </div>
+    </div>
+  )
+
+  // Memoized search handlers to prevent re-renders
+  const handleProjectSearchSelect = useCallback((selection) => {
+    // selection: { type: 'project_name' | 'institution_name', value: string }
+    setSearchTerm(selection.value)
+    setFiltering(true)
+    setCurrentPage(1)
+  }, [])
+
+  // Removed modal version of location filter
+
   // Reusable Filter Component
   const FilterComponent = ({ className = "" }) => (
     <div className={`bg-white shadow-lg dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 ${className}`}>
@@ -643,21 +778,29 @@ const ProjectDashboardFixed = () => {
       </h6>
       
       <div className="space-y-4">
-        {/* Search */}
+        {/* Search (Project Name or Institution) */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Search Projects
           </label>
-          <div className="relative">
-            <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search projects..."
+          <ProjectSearchDropdown
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+            onSelect={handleProjectSearchSelect}
+            placeholder="Search by project name or institution name..."
             />
           </div>
+
+        {/* Location Search (inline, like other groups) */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Filter by Location
+          </label>
+          <LocationSearchDropdown
+            selectedLocation={selectedLocation}
+            onLocationSelect={handleLocationSelect}
+            onLocationClear={handleLocationClear}
+            placeholder="Search by MMDA, region, country, address, city/town..."
+          />
         </div>
 
         {/* Project Overview Filters Group */}
@@ -720,7 +863,7 @@ const ProjectDashboardFixed = () => {
                   >
                     <option value="all">All Services</option>
                     {servicesOptions.map(service => (
-                      <option key={service.id} value={service.serviceName}>{service.serviceName}</option>
+                      <option key={service.id} value={service.id}>{service.serviceName}</option>
                     ))}
                   </select>
                 </div>
@@ -736,7 +879,7 @@ const ProjectDashboardFixed = () => {
                   >
                     <option value="all">All Building Types</option>
                     {buildingTypesOptions.map(type => (
-                      <option key={type.id} value={type.buildingType}>{type.buildingType}</option>
+                      <option key={type.id} value={type.id}>{type.buildingType}</option>
                     ))}
                   </select>
                 </div>
@@ -752,7 +895,7 @@ const ProjectDashboardFixed = () => {
                   >
                     <option value="all">All Project Types</option>
                     {projectTypesOptions.map(type => (
-                      <option key={type.id} value={type.projectType}>{type.projectType}</option>
+                      <option key={type.id} value={type.id}>{type.projectType}</option>
                     ))}
                   </select>
                 </div>
@@ -768,7 +911,7 @@ const ProjectDashboardFixed = () => {
                   >
                     <option value="all">All Project Categories</option>
                     {projectCategoriesOptions.map(cat => (
-                      <option key={cat.id} value={cat.category}>{cat.category}</option>
+                      <option key={cat.id} value={cat.id}>{cat.category}</option>
                     ))}
                   </select>
                 </div>
@@ -777,69 +920,7 @@ const ProjectDashboardFixed = () => {
           )}
         </div>
 
-        {/* Location Filters Group */}
-        <div className="border border-gray-200 dark:border-gray-600 rounded-lg">
-          <button
-            onClick={() => toggleFilterGroup('location')}
-            className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-          >
-            <span className="font-medium text-gray-900 dark:text-white">Location</span>
-            {expandedFilterGroups.location ? <FiChevronDown className="w-5 h-5" /> : <FiChevronRight className="w-5 h-5" />}
-          </button>
-          {expandedFilterGroups.location && (
-            <div className="p-4 pt-0 space-y-4">
-              <div className="grid grid-cols-1 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Region
-                  </label>
-                  <select
-                    value={regionFilter}
-                    onChange={(e) => setRegionFilter(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                  >
-                    <option value="all">All Regions</option>
-                    {getUniqueRegions().map(region => (
-                      <option key={region} value={region}>{region}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    City
-                  </label>
-                  <select
-                    value={cityFilter}
-                    onChange={(e) => setCityFilter(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                  >
-                    <option value="all">All Cities</option>
-                    {getUniqueCities().map(city => (
-                      <option key={city} value={city}>{city}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Town
-                  </label>
-                  <select
-                    value={townFilter}
-                    onChange={(e) => setTownFilter(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                  >
-                    <option value="all">All Towns</option>
-                    {getUniqueTowns().map(town => (
-                      <option key={town} value={town}>{town}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+        {/* Location filtering is now handled by the location search input above */}
 
         {/* Stakeholders Filters Group */}
         <div className="border border-gray-200 dark:border-gray-600 rounded-lg">
@@ -864,7 +945,7 @@ const ProjectDashboardFixed = () => {
                   >
                     <option value="all">All Clients</option>
                     {clientsOptions.map(c => (
-                      <option key={c.id} value={c.clientName}>{c.clientName}</option>
+                      <option key={c.id} value={c.id}>{c.clientName}</option>
                     ))}
                   </select>
                 </div>
@@ -880,7 +961,7 @@ const ProjectDashboardFixed = () => {
                   >
                     <option value="all">All Contractors</option>
                     {contractorsOptions.map(c => (
-                      <option key={c.id} value={c.fullName}>{c.fullName}</option>
+                      <option key={c.id} value={c.id}>{c.fullName}</option>
                     ))}
                   </select>
                 </div>
@@ -896,7 +977,7 @@ const ProjectDashboardFixed = () => {
                   >
                     <option value="all">All Clerk of Works</option>
                     {clerkOfWorksOptions.map(cow => (
-                      <option key={cow.id} value={cow.fullName}>{cow.fullName}</option>
+                      <option key={cow.id} value={cow.id}>{cow.fullName}</option>
                     ))}
                   </select>
                 </div>
@@ -912,7 +993,7 @@ const ProjectDashboardFixed = () => {
                   >
                     <option value="all">All Funding Agencies</option>
                     {fundingAgenciesOptions.map(agency => (
-                      <option key={agency.id} value={agency.agencyName}>{agency.agencyName}</option>
+                      <option key={agency.id} value={agency.id}>{agency.agencyName}</option>
                     ))}
                   </select>
                 </div>
@@ -928,7 +1009,7 @@ const ProjectDashboardFixed = () => {
                   >
                     <option value="all">All Project Managers</option>
                     {projectManagersOptions.map(manager => (
-                      <option key={manager.id} value={manager.managerName}>{manager.managerName}</option>
+                      <option key={manager.id} value={manager.id}>{manager.managerName}</option>
                     ))}
                   </select>
                 </div>
@@ -944,7 +1025,7 @@ const ProjectDashboardFixed = () => {
                   >
                     <option value="all">All Project Coordinators</option>
                     {projectCoordinatorsOptions.map(coordinator => (
-                      <option key={coordinator.id} value={coordinator.fullName}>{coordinator.fullName}</option>
+                      <option key={coordinator.id} value={coordinator.id}>{coordinator.fullName}</option>
                     ))}
                   </select>
                 </div>
@@ -957,6 +1038,7 @@ const ProjectDashboardFixed = () => {
         <button
           onClick={() => {
             setSearchTerm('')
+            setSelectedLocation(null)
             setStatusFilter('all')
             setPriorityFilter('all')
             setClientFilter('all')
@@ -966,9 +1048,6 @@ const ProjectDashboardFixed = () => {
             setBuildingTypeFilter('all')
             setProjectTypeFilter('all')
             setProjectCategoryFilter('all')
-            setRegionFilter('all')
-            setCityFilter('all')
-            setTownFilter('all')
             setFundingAgencyFilter('all')
             setProjectManagerFilter('all')
             setProjectCoordinatorFilter('all')
@@ -981,7 +1060,7 @@ const ProjectDashboardFixed = () => {
     </div>
   )
 
-  if (loading) {
+  if (initialLoad) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
         <div className="text-center">
@@ -994,12 +1073,25 @@ const ProjectDashboardFixed = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Map Toggle */}
-      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-3">
+      {/* Sticky Header with Total Count */}
+      <div className="sticky top-0 z-50 bg-white/95 dark:bg-gray-800/95 backdrop-blur-md border-b border-gray-200 dark:border-gray-700 px-6 py-3">
         <div className="flex justify-between items-center flex-wrap">
+          <div className="flex items-center space-x-4">
           <h4 className="text-xl font-semibold text-gray-900 dark:text-white">
             Project Dashboard
           </h4>
+            <div className="flex items-center space-x-2">
+              <div className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-3 py-1 rounded-full text-sm font-medium">
+                {totalProjectsCount} Total Projects
+              </div>
+              {isSearching && (
+                <div className="flex items-center space-x-2 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 px-3 py-1 rounded-full text-sm font-medium">
+                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-yellow-600"></div>
+                  <span>Searching...</span>
+                </div>
+              )}
+            </div>
+          </div>
           <div className="flex items-center space-x-2">
             <button
               onClick={() => router.push('/projects/addNewProject/overview')}
@@ -1030,13 +1122,22 @@ const ProjectDashboardFixed = () => {
         {/* Map Section */}
         {viewMode === 'map' && showMap && (
           <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-            <div className="h-screen">
+            <div className="h-screen relative">
+              {(isSearching || filtering) ? (
+                <div className="absolute inset-0 flex items-center justify-center bg-gray-50 dark:bg-gray-800">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                    <p className="text-gray-600 dark:text-gray-400">Loading projects...</p>
+                  </div>
+                </div>
+              ) : (
               <ProjectMap
-                projects={filteredProjects}
+                  projects={isSearching || filtering ? [] : displayedProjects}
                 height="100%"
                 showPopup={true}
                 onMarkerClick={handleProjectClick}
               />
+              )}
             </div>
           </div>
         )}
@@ -1046,27 +1147,15 @@ const ProjectDashboardFixed = () => {
           <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
             <div className="flex relative">
               {/* Projects Grid */}
-              <div className="flex-1 p-6">
-                <div className="flex flex-wrap gap-4">
-                  {filtering && displayedProjects.length === 0 ? (
-                    // Skeleton loading for initial filter
+              <div ref={listRef} className="flex-1 p-6 max-h-[80vh] overflow-y-auto project-list-container">
+                <div ref={contentRef} className="flex flex-wrap gap-4">
+                  {(filtering || isSearching) && displayedProjects.length === 0 ? (
+                    // Skeleton loading for search/filter
                     Array.from({ length: 6 }).map((_, index) => (
-                      <div key={index} className="bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 p-4 w-full md:w-[calc(50%-0.5rem)] lg:w-[calc(33.333%-0.5rem)] animate-pulse">
-                        <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded mb-2"></div>
-                        <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded mb-2 w-3/4"></div>
-                        <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded mb-4 w-1/2"></div>
-                        <div className="h-2 bg-gray-200 dark:bg-gray-600 rounded mb-2"></div>
-                        <div className="h-2 bg-gray-200 dark:bg-gray-600 rounded mb-4"></div>
-                        <div className="h-20 bg-gray-200 dark:bg-gray-600 rounded mb-4"></div>
-                        <div className="space-y-2">
-                          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-2/3"></div>
-                          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-1/2"></div>
-                          <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-3/4"></div>
-                        </div>
-                      </div>
+                      <ProjectSkeleton key={index} />
                     ))
                   ) : (
-                    displayedProjects.map((project) => {
+                    displayedProjects.map((project, index) => {
                     const { planned, cumulative } = getProgress(project)
                     const progressActual = cumulative
                     const progressPlanned = planned
@@ -1076,7 +1165,7 @@ const ProjectDashboardFixed = () => {
                     
                     return (
                       <div
-                        key={project.project_id}
+                        key={`${project.project_id}-${index}`}
                         className={`bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 p-4 hover:shadow-lg transition-all duration-300 cursor-pointer w-full md:w-[calc(50%-0.5rem)] lg:w-[calc(33.333%-0.5rem)] ${
                           isExpanded ? 'shadow-xl border-blue-300 dark:border-blue-600' : ''
                         }`}
@@ -1089,7 +1178,7 @@ const ProjectDashboardFixed = () => {
                           </h5>
                           <div className="flex items-center space-x-2 !text-sm text-gray-600 dark:text-gray-400 mb-2">
                             <FiMapPin className="text-gray-400" />
-                            <span>{project.project_location?.city}, {project.project_location?.region}</span>
+                            <span>{project.project_location?.mmda}, {project.project_location?.region}</span>
                           </div>
                           <div className="flex items-center justify-between">
                             <span className={`px-2 py-1 !text-sm font-medium rounded-full ${getStatusColor(project.project_status)}`}>
@@ -1327,9 +1416,22 @@ const ProjectDashboardFixed = () => {
                 
                 {/* Loading More Indicator */}
                 {loadingMore && (
-                  <div className="text-center py-8">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-2"></div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Loading more projects...</p>
+                  <div className="w-full flex justify-center py-8">
+                    <div className="flex items-center space-x-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg px-6 py-4 shadow-lg animate-pulse">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Loading more projects...</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* End Of Results */}
+                {!loadingMore && !hasMore && displayedProjects.length > 0 && (
+                  <div className="w-full flex justify-center py-8">
+                    <div className="flex items-center space-x-2 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-6 py-4">
+                      <div className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full"></div>
+                      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">End Of Results</span>
+                      <div className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full"></div>
+                    </div>
                   </div>
                 )}
 
@@ -1345,14 +1447,7 @@ const ProjectDashboardFixed = () => {
                   </div>
                 )}
 
-                {/* No More Projects */}
-                {!hasMore && displayedProjects.length > 0 && (
-                  <div className="text-center py-8">
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      You've reached the end of the projects list
-                    </p>
-                  </div>
-                )}
+                {/* No More Projects - Removed, using "End Of Results" above */}
                 
                 {displayedProjects.length === 0 && !loading && (
                   <div className="text-center py-12">
@@ -1386,7 +1481,7 @@ const ProjectDashboardFixed = () => {
                   <h6 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                     Filters
                   </h6>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+                  <p className="!text-sm text-gray-600 dark:text-gray-400 mb-6">
                     Use the filters below to narrow down your project search
                   </p>
                 </div>
@@ -1415,30 +1510,20 @@ const ProjectDashboardFixed = () => {
 
         {/* Map Sidebar - Only show in map view */}
         {viewMode === 'map' && (
-          <div className="absolute top-0 z-800 left-0 w-1/3 bg-white/10 backdrop-blur-md max-h-[95%] overflow-y-auto dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 overflow-y-auto">
-            <div className="p-6">
-              <h6 className="font-semibold text-gray-900 dark:text-white mb-4">
-                All Projects ({filteredProjects.length})
+          <div ref={mapListRef} className="absolute top-0 z-800 left-0 w-1/3 bg-white/10 backdrop-blur-md max-h-[95%] overflow-y-auto dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 overflow-y-auto">
+            <div ref={mapContentRef} className="p-6">
+              <h6 className="font-semibold sticky top-0 backdrop-blur-md p-4 z-10 text-gray-900 ">
+                Projects ({totalProjectsCount} total, {displayedProjects.length} shown)
               </h6>
               
               <div className="space-y-4">
-                {filtering && displayedProjects.length === 0 ? (
+                {(filtering || isSearching) && displayedProjects.length === 0 ? (
                   // Skeleton loading for map sidebar
                   Array.from({ length: 4 }).map((_, index) => (
-                    <div key={index} className="bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 p-4 animate-pulse">
-                      <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded mb-2"></div>
-                      <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded mb-2 w-3/4"></div>
-                      <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded mb-4 w-1/2"></div>
-                      <div className="h-2 bg-gray-200 dark:bg-gray-600 rounded mb-2"></div>
-                      <div className="h-2 bg-gray-200 dark:bg-gray-600 rounded mb-4"></div>
-                      <div className="space-y-2">
-                        <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-2/3"></div>
-                        <div className="h-3 bg-gray-200 dark:bg-gray-600 rounded w-1/2"></div>
-                      </div>
-                    </div>
+                    <MapSidebarSkeleton key={index} />
                   ))
                 ) : (
-                  displayedProjects.map((project) => {
+                  displayedProjects.map((project, index) => {
                   const { planned, cumulative } = getProgress(project)
                   const progressActual = cumulative
                   const progressPlanned = planned
@@ -1448,7 +1533,7 @@ const ProjectDashboardFixed = () => {
                   
                   return (
                     <div
-                      key={project.project_id}
+                      key={`${project.project_id}-${index}`}
                       className={`bg-gray-50 max-w-sm dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 p-4 hover:shadow-md transition-all duration-300 cursor-pointer ${
                         isExpanded ? 'shadow-xl border-blue-300 dark:border-blue-600' : ''
                       }`}
@@ -1461,7 +1546,7 @@ const ProjectDashboardFixed = () => {
                           </h6>
                           <div className="flex items-center space-x-2 text-xs text-gray-600 dark:text-gray-400 mb-2">
                             <FiMapPin className="text-gray-400" />
-                            <span>{project.project_location?.city}, {project.project_location?.region}</span>
+                            <span>{project.project_location?.mmda}, {project.project_location?.region}</span>
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">

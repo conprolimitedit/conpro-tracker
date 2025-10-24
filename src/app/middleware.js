@@ -2,45 +2,43 @@ import { NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 
 export function middleware(request) {
-  // Define protected routes
-  const protectedRoutes = ['/', '/projects', '/contentManagement', '/users']
-  const isProtectedRoute = protectedRoutes.some(route => 
-    request.nextUrl.pathname.startsWith(route)
-  )
+  const { pathname } = request.nextUrl
 
-  // Skip middleware for non-protected routes
-  if (!isProtectedRoute) {
-    return NextResponse.next()
-  }
+  // Public routes (allow unauthenticated access)
+  const publicRoutes = ['/', '/login']
+  const isPublic = publicRoutes.some(route => pathname === route || pathname.startsWith(`${route}/`))
+  if (isPublic) return NextResponse.next()
 
-  // Check for token in localStorage (client-side only)
-  if (typeof window === 'undefined') {
-    return NextResponse.next()
-  }
+  // Protected routes
+  const protectedPrefixes = ['/projects', '/contentManagement', '/users']
+  const isProtected = protectedPrefixes.some(route => pathname.startsWith(route))
+  if (!isProtected) return NextResponse.next()
 
-  const token = localStorage.getItem('token')
-  
+  // Read JWT from HttpOnly cookie (set by login route)
+  const tokenCookie = request.cookies.get('auth_token')
+  const token = tokenCookie?.value
   if (!token) {
-    return NextResponse.redirect(new URL('/', request.url))
+    const url = new URL('/', request.url)
+    return NextResponse.redirect(url)
   }
 
   try {
-    // Verify token
-    jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key')
+    const secret = process.env.NEXT_PUBLIC_JWT_SECRET || process.env.JWT_SECRET || 'your-secret-key'
+    const payload = jwt.verify(token, secret)
+
+    // Admin-only guard for /users
+    if (pathname.startsWith('/users') && payload?.userRole !== 'admin') {
+      const url = new URL('/', request.url)
+      return NextResponse.redirect(url)
+    }
+
     return NextResponse.next()
-  } catch (error) {
-    // Token is invalid, redirect to login
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
-    return NextResponse.redirect(new URL('/', request.url))
+  } catch (err) {
+    const url = new URL('/', request.url)
+    return NextResponse.redirect(url)
   }
 }
 
 export const config = {
-  matcher: [
-    '//:path*',
-    '/projects/:path*',
-    '/contentManagement/:path*',
-    '/users/:path*'
-  ]
+  matcher: ['/projects/:path*', '/contentManagement/:path*', '/users/:path*']
 }

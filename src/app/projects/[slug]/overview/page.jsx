@@ -5,6 +5,7 @@ import { FiSave } from 'react-icons/fi'
 import { toast } from 'react-toastify'
 import MultiSelectDropdown from '../../../components/MultiSelectDropdown'
 import EnhancedLocationSelector from '../../../components/EnhancedLocationSelector'
+import LinkedProjectsSelector from '../../../components/LinkedProjectsSelector'
 import { useAuth } from '../../../contexts/AuthContext'
 // import { supabase } from '../../../lib/supabaseClient' // Not needed for file upload
 // Remove dummy data import - we'll fetch real data from APIs
@@ -27,8 +28,8 @@ const ProjectOverviewPage = () => {
     location: {
       country: '',
       region: '',
-      city: '',
-      town: '',
+      mmda: '',
+      city_town: '',
       gpsCoordinates: { lat: '', lng: '' },
       address: '',
       additional_info: ''
@@ -201,8 +202,8 @@ const ProjectOverviewPage = () => {
         location: {
           country: project.project_location?.country || '',
           region: project.project_location?.region || '',
-          city: project.project_location?.city || '',
-          town: project.project_location?.town || '',
+          mmda: project.project_location?.mmda || '',
+          city_town: project.project_location?.city_town || '',
           gpsCoordinates: project.project_location?.gpsCoordinates || { lat: '', lng: '' },
           address: project.project_location?.address || '',
           additional_info: project.project_location?.additional_info || ''
@@ -231,7 +232,7 @@ const ProjectOverviewPage = () => {
         sitePossessionDate: project.site_possession_date || '',
         duration: project.project_duration || '',
         specialComments: project.project_special_comment || '',
-        linkedProjects: project.linked_projects || [],
+        linkedProjects: project.linked_projects || [], // This will be populated with full project objects
         revisedDate: project.revised_date || '',
         projectStage: project.project_stage || ''
       }
@@ -406,7 +407,7 @@ const ProjectOverviewPage = () => {
       const missingFields = requiredFields.filter(field => !formData[field])
       
       // Validate location fields
-      const locationFields = ['country', 'region', 'city']
+      const locationFields = ['country', 'region', 'mmda']
       const missingLocationFields = locationFields.filter(field => !formData.location[field])
       
       if (missingFields.length > 0) {
@@ -425,8 +426,8 @@ const ProjectOverviewPage = () => {
       const locationData = {
         country: formData.location.country, // This should be the full country name
         region: formData.location.region,
-        city: formData.location.city,
-        town: formData.location.town,
+        mmda: formData.location.mmda,
+        city_town: formData.location.city_town,
         gpsCoordinates: formData.location.gpsCoordinates,
         address: formData.location.address,
         additional_info: formData.location.additional_info
@@ -457,7 +458,7 @@ const ProjectOverviewPage = () => {
         site_possession_date: formData.sitePossessionDate,
         handing_over_date: formData.handingOverDate,
         revised_date: formData.revisedDate,
-        linked_projects: formData.linkedProjects.map(project => project.id || project), // Use ID
+        linked_projects: formData.linkedProjects.map(project => project.id || project.project_id), // Use ID
         project_description: formData.projectDescription,
         project_details: formData.projectDetails,
         project_special_comment: formData.specialComments,
@@ -799,8 +800,8 @@ const ProjectOverviewPage = () => {
                     <option value="in-progress">In Progress</option>
                     <option value="completed">Completed</option>
                     <option value="on-hold">On Hold</option>
-                    <option value="on-hold">Terminated</option>
-                    <option value="on-hold">Abandoned</option>
+                    <option value="terminated">Terminated</option>
+                    <option value="abandoned">Abandoned</option>
                     <option value="cancelled">Cancelled</option>
                   </select>
               </div>
@@ -934,7 +935,7 @@ const ProjectOverviewPage = () => {
             <EnhancedLocationSelector
               location={formData.location}
               onLocationChange={handleLocationChange}
-              cityLabel="City/ MMDA"
+              cityLabel="MMDA"
             />
 
 
@@ -1048,19 +1049,16 @@ const ProjectOverviewPage = () => {
 
 
 
- {/* Linked Projects Section */}
- <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          {/* Linked Projects Section */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
             <h5 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
               <div className="w-2 h-2 bg-teal-500 rounded-full mr-3"></div>
               Linked Projects
             </h5>
-            <MultiSelectDropdown
-              options={projects}
-              selectedItems={formData.linkedProjects || []}
+            <LinkedProjectsSelector
+              selectedProjects={formData.linkedProjects || []}
               onSelectionChange={(selectedProjects) => setFormData(prev => ({ ...prev, linkedProjects: selectedProjects }))}
-              placeholder="Select linked projects..."
-              searchPlaceholder="Search projects..."
-              nameField="project_name"
+              placeholder="Search projects by MMDA or Institution name..."
             />
           </div>
 

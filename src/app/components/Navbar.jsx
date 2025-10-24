@@ -53,7 +53,7 @@ const Navbar = () => {
   }
 
   // Do not render on home or login routes
-  if (pathname === '/' || pathname === '/login') {
+  if (pathname === '/' || pathname === '/') {
     return null
   }
 

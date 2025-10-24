@@ -1,29 +1,32 @@
 'use client'
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../../contexts/AuthContext'
 import ContentCRUD from '../../components/ContentCRUD'
 
 const FinanceDocumentsPage = () => {
   const router = useRouter()
+  const { user, loading: authLoading, isAuthenticated, hasRole } = useAuth()
   const [financeDocumentsData, setFinanceDocumentsData] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    // Role guard: only admin and finance
-    try {
-      const stored = typeof window !== 'undefined' ? localStorage.getItem('currentUser') : null
-      const user = stored ? JSON.parse(stored) : null
-      const role = user?.role
-      if (!role || (role !== 'admin' && role !== 'finance')) {
-        router.replace('/')
-        return
-      }
-    } catch (_) {
+    // Wait for auth to load
+    if (authLoading) return
+    
+    // Role guard: only admin, finance, and project manager
+    if (!isAuthenticated()) {
       router.replace('/')
       return
     }
-  }, [router])
+    
+    const userRole = user?.userRole
+    if (!userRole || (userRole !== 'admin' && userRole !== 'finance' && userRole !== 'projectManager')) {
+      router.replace('/')
+      return
+    }
+  }, [router, authLoading, isAuthenticated, user])
 
   // Fetch finance documents from database
   const fetchFinanceDocuments = async () => {
@@ -113,6 +116,15 @@ const FinanceDocumentsPage = () => {
     }
   }
 
+  // Show loading while auth is loading
+  if (authLoading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="text-lg">Loading...</div>
+      </div>
+    )
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -135,6 +147,9 @@ const FinanceDocumentsPage = () => {
     )
   }
 
+  // Determine if user can perform actions (admin and finance can edit, project manager is read-only)
+  const canEdit = user?.userRole === 'admin' || user?.userRole === 'finance'
+
   return (
     <ContentCRUD
       title="Finance Documents"
@@ -143,6 +158,7 @@ const FinanceDocumentsPage = () => {
       onSave={handleSave}
       onDelete={handleDelete}
       searchFields={['documentType', 'category', 'description']}
+      showActions={canEdit}
     />
   )
 }
