@@ -22,12 +22,14 @@ const Navbar = () => {
     { name: 'Contractors', href: '/contentManagement/contractors' },
     { name: 'Clients', href: '/contentManagement/clients' },
     { name: 'Funding Agencies', href: '/contentManagement/funding-agencies' },
-    { name: 'Structure', href: '/contentManagement/building-types' },
+    { name: 'Structures', href: '/contentManagement/building-types' },
     { name: 'Services', href: '/contentManagement/services' },
     { name: 'Clerk of Works', href: '/contentManagement/clerk-of-works' },
+    { name: 'Project Managers', href: '/contentManagement/project-managers' },
+    { name: 'Project Coordinators', href: '/contentManagement/project-coordinators' },
     { name: 'Project Types', href: '/contentManagement/project-types' },
-    { name: 'Project Categories', href: '/contentManagement/project-categories' },
-    { name: 'Finance Document ', href: '/contentManagement/finance-documents' }
+    { name: 'Project Categories', href: '/contentManagement/project-category' },
+    { name: 'Finance Documents', href: '/contentManagement/finance-documents' }
   ]
 
   const canSeeFinance = user?.userRole === 'admin' || user?.userRole === 'finance'
@@ -59,7 +61,7 @@ const Navbar = () => {
 
   return (
     <>
-    <nav className="bg-white shadow-lg border-b border-gray-200">
+    <nav className="relative bg-white shadow-lg border-b z-[1000] md:z-[10000] lg:z-[10000] border-gray-200">
       <div className=" mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           {/* Logo and Brand */}

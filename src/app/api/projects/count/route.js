@@ -54,7 +54,10 @@ export async function GET(request) {
     }
     
     const buildingTypeId = searchParams.get('buildingTypeId')
-    if (buildingTypeId && buildingTypeId !== 'all') {
+    const buildingTypeIdExact = searchParams.get('buildingTypeIdExact')
+    if (buildingTypeIdExact) {
+      query = query.contains('building_types', [buildingTypeIdExact])
+    } else if (buildingTypeId && buildingTypeId !== 'all') {
       query = query.contains('building_types', [buildingTypeId])
     }
     
@@ -82,6 +85,32 @@ export async function GET(request) {
     if (projectCoordinatorId && projectCoordinatorId !== 'all') {
       query = query.contains('project_coordinators', [projectCoordinatorId])
     }
+
+    // Structure free-text search (building types by name/category/code)
+    const buildingTypeSearch = searchParams.get('buildingTypeSearch')
+    if (buildingTypeSearch) {
+      const btPattern = `%${buildingTypeSearch}%`
+      const { data: btRows, error: btErr } = await supabase
+        .from('building_types')
+        .select('id')
+        .or(`buildingType.ilike.${btPattern},category.ilike.${btPattern},code.ilike.${btPattern}`)
+        .limit(200)
+      if (!btErr) {
+        const ids = (btRows || []).map(r => r.id).filter(Boolean)
+        if (ids.length === 0) {
+          return Response.json({ success: true, totalCount: 0 })
+        }
+        query = query.overlaps('building_types', ids)
+      }
+    }
+
+    // Date filters (equals match)
+    const contractDate = searchParams.get('contractDate')
+    const projectStartDate = searchParams.get('projectStartDate')
+    const projectEndDate = searchParams.get('projectEndDate')
+    if (contractDate) query = query.eq('contract_date', contractDate)
+    if (projectStartDate) query = query.eq('project_start_date', projectStartDate)
+    if (projectEndDate) query = query.eq('project_end_date', projectEndDate)
 
     const { count, error } = await query
 

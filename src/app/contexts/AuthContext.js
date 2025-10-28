@@ -115,14 +115,22 @@ export const AuthProvider = ({ children }) => {
   }
 
   // Logout function
-  const logout = () => {
-    try { fetch('/api/users/logout', { method: 'POST' }) } catch {}
+  const logout = async () => {
+    try {
+      // Call server to clear cookie
+      await fetch('/api/users/logout', { method: 'POST' })
+    } catch (error) {
+      console.error('Logout API error:', error)
+    }
+    
+    // Clear client-side storage (localStorage as failsafe for iOS/Apple devices)
     if (typeof window !== 'undefined') {
       localStorage.removeItem('user')
-      setToken(null); setUser(null)
+      setToken(null)
+      setUser(null)
       window.location.replace('/')
     }
-    console.log('✅ Logout successful - Token removed from localStorage')
+    console.log('✅ Logout successful - Token removed from localStorage and server')
   }
 
   // Check if user is authenticated

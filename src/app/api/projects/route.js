@@ -97,6 +97,7 @@ export async function GET(request) {
     const cowId = searchParams.get('cowId') || ''
     const serviceId = searchParams.get('serviceId') || ''
     const buildingTypeId = searchParams.get('buildingTypeId') || ''
+    const buildingTypeIdExact = searchParams.get('buildingTypeIdExact') || ''
     const projectTypeId = searchParams.get('projectTypeId') || ''
     const projectCategoryId = searchParams.get('projectCategoryId') || ''
     const fundingAgencyId = searchParams.get('fundingAgencyId') || ''
@@ -105,6 +106,10 @@ export async function GET(request) {
     const locationType = searchParams.get('locationType') || ''
     const locationValue = searchParams.get('locationValue') || ''
     const search = searchParams.get('search') || ''
+    const buildingTypeSearch = searchParams.get('buildingTypeSearch') || ''
+    const contractDate = searchParams.get('contractDate') || ''
+    const projectStartDate = searchParams.get('projectStartDate') || ''
+    const projectEndDate = searchParams.get('projectEndDate') || ''
 
     // Base query
     let query = supabase
@@ -131,7 +136,10 @@ export async function GET(request) {
     if (serviceId) {
       query = query.contains('project_services', [serviceId])
     }
-    if (buildingTypeId) {
+    if (buildingTypeIdExact) {
+      // exact id match within array
+      query = query.contains('building_types', [buildingTypeIdExact])
+    } else if (buildingTypeId) {
       query = query.contains('building_types', [buildingTypeId])
     }
     if (projectTypeId) {
@@ -153,13 +161,46 @@ export async function GET(request) {
       query = query.eq(`project_location->>${locationType}`, locationValue)
     }
     if (search) {
-      // Restrict search to project_name and institution_name only
+      // Partial match across multiple fields (aligned with count endpoint)
       const pattern = `%${search}%`
-      query = query.or(`project_name.ilike.${pattern},institution_name.ilike.${pattern}`)
+      query = query.or(
+        `project_name.ilike.${pattern},project_description.ilike.${pattern},institution_name.ilike.${pattern},project_location->>mmda.ilike.${pattern},project_location->>region.ilike.${pattern},project_location->>country.ilike.${pattern},project_location->>address.ilike.${pattern},project_location->>city_town.ilike.${pattern}`
+      )
+    }
+
+    // Structure free-text search (building types by name/category/code)
+    if (buildingTypeSearch) {
+      const btPattern = `%${buildingTypeSearch}%`
+      const { data: btRows, error: btErr } = await supabase
+        .from('building_types')
+        .select('id')
+        .or(`buildingType.ilike.${btPattern},category.ilike.${btPattern},code.ilike.${btPattern}`)
+        .limit(200)
+      if (btErr) {
+        console.warn('⚠️ building_types search error:', btErr.message)
+      }
+      const ids = (btRows || []).map(r => r.id).filter(Boolean)
+      if (ids.length === 0) {
+        // Short-circuit: nothing will match
+        return NextResponse.json({ success: true, count: 0, projects: [], message: 'No projects found' })
+      }
+      // Match any of the found IDs
+      query = query.overlaps('building_types', ids)
+    }
+
+    // Date filters (equals match)
+    if (contractDate) {
+      query = query.eq('contract_date', contractDate)
+    }
+    if (projectStartDate) {
+      query = query.eq('project_start_date', projectStartDate)
+    }
+    if (projectEndDate) {
+      query = query.eq('project_end_date', projectEndDate)
     }
 
     // Apply pagination last
-    const { data: projects, error } = await query.range(from, to)
+    let { data: projects, error } = await query.range(from, to)
 
     if (error) {
       console.error('❌ Database error:', error)
@@ -168,6 +209,21 @@ export async function GET(request) {
         error: 'Failed to fetch projects',
         details: error.message
       }, { status: 500 })
+    }
+
+    // Fallback: if search is present and no results, try exact match on project_name
+    // This avoids edge cases where special characters (e.g., parentheses) might confuse the OR parser
+    const anyOtherFilters = Boolean(status || priority || clientId || contractorId || cowId || serviceId || buildingTypeId || buildingTypeIdExact || projectTypeId || projectCategoryId || fundingAgencyId || projectManagerId || projectCoordinatorId || locationType || locationValue || buildingTypeSearch || contractDate || projectStartDate || projectEndDate)
+    if (search && (!projects || projects.length === 0) && !anyOtherFilters) {
+      const { data: exactProjects, error: exactErr } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('project_name', search)
+        .order('created_at', { ascending: false })
+        .range(from, to)
+      if (!exactErr && exactProjects && exactProjects.length > 0) {
+        projects = exactProjects
+      }
     }
 
     console.log(`✅ Successfully fetched ${projects?.length || 0} projects`)
@@ -278,8 +334,8 @@ export async function POST(request) {
     const requiredFields = ['project_name', 'project_slug']
     const missingFields = requiredFields.filter(field => !body[field])
     
-    // Validate location fields
-    const locationFields = ['country', 'region', 'city']
+    // Validate location fields - use mmda instead of city
+    const locationFields = ['country', 'region', 'mmda']
     const missingLocationFields = locationFields.filter(field => !body.project_location || !body.project_location[field])
     
     if (missingFields.length > 0) {
@@ -305,13 +361,23 @@ export async function POST(request) {
     }
 
     // Prepare project data for insertion
+    // Trim whitespace from institution name and project name
+    const trimmedInstitutionName = body.institution_name ? body.institution_name.trim() : ''
+    const trimmedProjectName = body.project_name ? body.project_name.trim() : ''
+    
+    // Set default country to Ghana if not specified
+    const projectLocation = body.project_location || {}
+    if (!projectLocation.country) {
+      projectLocation.country = 'Ghana'
+    }
+    
     const projectData = {
-      institution_name: body.institution_name || '',
-      project_name: body.project_name,
+      institution_name: trimmedInstitutionName,
+      project_name: trimmedProjectName,
       project_slug: body.project_slug,
       project_priority: body.project_priority || 'medium',
       project_cover_image: coverImageData || {},
-      project_location: body.project_location || {},
+      project_location: projectLocation,
       project_categories: Array.isArray(body.project_categories) ? body.project_categories : (body.project_categories ? [body.project_categories] : []),
       project_clients: body.project_clients || [],
       funding_agencies: Array.isArray(body.funding_agencies) ? body.funding_agencies : (body.funding_agencies ? [body.funding_agencies] : []),

@@ -8,6 +8,40 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SERVICE_ROLE_KEY
 )
 
+// --- Helpers for projects_summary updates ---
+const statusToColumn = (status) => {
+  if (!status) return null
+  return status.toLowerCase().replace(/\s+/g, '-').replace(/-/g, '_')
+}
+
+async function readSummary() {
+  const { data, error } = await supabase
+    .from('projects_summary')
+    .select('*')
+    .eq('id', 1)
+    .single()
+  if (error) throw error
+  return data
+}
+
+async function writeSummary(updated) {
+  const { error } = await supabase
+    .from('projects_summary')
+    .update({
+      planning: updated.planning,
+      in_progress: updated.in_progress,
+      completed: updated.completed,
+      on_hold: updated.on_hold,
+      terminated: updated.terminated,
+      abandoned: updated.abandoned,
+      cancelled: updated.cancelled,
+      total_projects: updated.total_projects,
+      last_updated: new Date().toISOString(),
+    })
+    .eq('id', 1)
+  if (error) throw error
+}
+
 // GET /api/projects/[id] - Get a specific project
 export async function GET(request, { params }) {
   try {
@@ -139,6 +173,13 @@ export async function DELETE(request, { params }) {
   try {
     const { id } = params
     console.log('🚀 Deleting project:', id)
+
+    // Fetch existing to get status for summary update
+    const { data: existingProject } = await supabase
+      .from('projects')
+      .select('project_status')
+      .eq('project_id', id)
+      .single()
     
     const { data: deletedProject, error } = await supabase
       .from('projects')
@@ -160,6 +201,19 @@ export async function DELETE(request, { params }) {
         success: false,
         error: 'Project not found'
       }, { status: 404 })
+    }
+
+    // Update projects_summary (always decrement total, decrement status bucket if present)
+    try {
+      const col = statusToColumn(existingProject?.project_status)
+      const summary = await readSummary()
+      const next = { ...summary }
+      if (col) next[col] = Math.max(0, (Number(next[col]) || 0) - 1)
+      next.total_projects = Math.max(0, (Number(next.total_projects) || 0) - 1)
+      await writeSummary(next)
+      console.log('✅ Updated projects_summary after delete')
+    } catch (sumErr) {
+      console.warn('⚠️ Failed to update projects_summary after delete:', sumErr?.message)
     }
 
     console.log('✅ Project deleted successfully:', deletedProject[0].project_name)

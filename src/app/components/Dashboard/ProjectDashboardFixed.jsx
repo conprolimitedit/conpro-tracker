@@ -7,6 +7,7 @@ import ProjectMap from '../Map/ProjectMap'
 
 import LocationSearchDropdown from '../LocationSearchDropdown'
 import ProjectSearchDropdown from '../Projects/ProjectSearchDropdown'
+import StructureSearchDropdown from '../StructureSearchDropdown'
 import ProjectList from '../Projects/ProjectList'
 import { MdCancel } from "react-icons/md";
 
@@ -40,6 +41,10 @@ const ProjectDashboardFixed = () => {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedLocation, setSelectedLocation] = useState(null)
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
+  // Applied vs Draft filter state
+  const [appliedSearchTerm, setAppliedSearchTerm] = useState('')
+  const [draftSearchTerm, setDraftSearchTerm] = useState('')
+  const [draftSelectedLocation, setDraftSelectedLocation] = useState(null)
   const [totalProjectsCount, setTotalProjectsCount] = useState(0)
   const [isSearching, setIsSearching] = useState(false)
   const [hasMounted, setHasMounted] = useState(false)
@@ -69,6 +74,41 @@ const ProjectDashboardFixed = () => {
   const [fundingAgencyFilter, setFundingAgencyFilter] = useState('all')
   const [projectManagerFilter, setProjectManagerFilter] = useState('all')
   const [projectCoordinatorFilter, setProjectCoordinatorFilter] = useState('all')
+  // Draft versions
+  const [draftStatusFilter, setDraftStatusFilter] = useState('all')
+  const [draftPriorityFilter, setDraftPriorityFilter] = useState('all')
+  const [draftClientFilter, setDraftClientFilter] = useState('all')
+  const [draftContractorFilter, setDraftContractorFilter] = useState('all')
+  const [draftClerkOfWorkFilter, setDraftClerkOfWorkFilter] = useState('all')
+  const [draftProjectServiceFilter, setDraftProjectServiceFilter] = useState('all')
+  const [draftBuildingTypeFilter, setDraftBuildingTypeFilter] = useState('all')
+  const [draftProjectTypeFilter, setDraftProjectTypeFilter] = useState('all')
+  const [draftProjectCategoryFilter, setDraftProjectCategoryFilter] = useState('all')
+  const [draftFundingAgencyFilter, setDraftFundingAgencyFilter] = useState('all')
+  const [draftProjectManagerFilter, setDraftProjectManagerFilter] = useState('all')
+  const [draftProjectCoordinatorFilter, setDraftProjectCoordinatorFilter] = useState('all')
+  // Structure free-text search (buildingTypes by name/category/code)
+  const [draftStructureSearch, setDraftStructureSearch] = useState('')
+  const [draftStructureId, setDraftStructureId] = useState('')
+  const [appliedStructureId, setAppliedStructureId] = useState('')
+  // Date filters (applied + draft)
+  const [contractDateFilter, setContractDateFilter] = useState('')
+  const [projectStartDateFilter, setProjectStartDateFilter] = useState('')
+  const [projectEndDateFilter, setProjectEndDateFilter] = useState('')
+  const [draftContractDateFilter, setDraftContractDateFilter] = useState('')
+  const [draftProjectStartDateFilter, setDraftProjectStartDateFilter] = useState('')
+  const [draftProjectEndDateFilter, setDraftProjectEndDateFilter] = useState('')
+  // Bump to force refetch after apply/clear even if values equal previous
+  const [filtersBump, setFiltersBump] = useState(0)
+  const structureInputRef = useRef(null)
+  const handleStructureChange = (e) => {
+    const val = e.target.value
+    setDraftStructureSearch(val)
+    // Keep focus stable even if parent re-renders
+    requestAnimationFrame(() => {
+      try { structureInputRef.current && structureInputRef.current.focus() } catch {}
+    })
+  }
   const [showMap, setShowMap] = useState(true)
   const [showFilters, setShowFilters] = useState(false) // Changed to false by default
   const [viewMode, setViewMode] = useState('map')
@@ -78,27 +118,30 @@ const ProjectDashboardFixed = () => {
     projectDetails: false
   })
 
-  // Debounced search effects with loading state
+  // Debounced search effects with loading state (use draftSearchTerm)
   useEffect(() => {
-    if (searchTerm !== debouncedSearchTerm) {
-      setIsSearching(true)
+    // If cleared, immediately clear debounced
+    if (draftSearchTerm === '') {
+      setDebouncedSearchTerm('')
+      setIsSearching(false)
+      return
     }
+    if (draftSearchTerm !== debouncedSearchTerm) setIsSearching(true)
     const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm)
+      setDebouncedSearchTerm(draftSearchTerm)
       setIsSearching(false)
     }, 500)
     return () => clearTimeout(timer)
-  }, [searchTerm, debouncedSearchTerm])
+  }, [draftSearchTerm, debouncedSearchTerm])
 
   // Location selection handlers
   const handleLocationSelect = useCallback((location) => {
-    setSelectedLocation(location)
-    setFiltering(true)
-    setCurrentPage(1)
+    // Draft selection only
+    setDraftSelectedLocation(location)
   }, [])
 
   const handleLocationClear = useCallback(() => {
-    setSelectedLocation(null)
+    setDraftSelectedLocation(null)
   }, [])
 
   // Content options fetched from database for dropdowns
@@ -142,7 +185,8 @@ const ProjectDashboardFixed = () => {
   const fetchTotalCount = async () => {
     try {
       const params = new URLSearchParams()
-      if (debouncedSearchTerm) params.set('search', debouncedSearchTerm)
+      // Use applied filters for count to avoid stale search terms
+      if (appliedSearchTerm) params.set('search', appliedSearchTerm)
       if (selectedLocation) {
         params.set('locationType', selectedLocation.type)
         params.set('locationValue', selectedLocation.value)
@@ -159,6 +203,10 @@ const ProjectDashboardFixed = () => {
       if (fundingAgencyFilter !== 'all') params.set('fundingAgencyId', String(fundingAgencyFilter))
       if (projectManagerFilter !== 'all') params.set('projectManagerId', String(projectManagerFilter))
       if (projectCoordinatorFilter !== 'all') params.set('projectCoordinatorId', String(projectCoordinatorFilter))
+      if (appliedStructureId) params.set('buildingTypeIdExact', String(appliedStructureId))
+      if (contractDateFilter) params.set('contractDate', contractDateFilter)
+      if (projectStartDateFilter) params.set('projectStartDate', projectStartDateFilter)
+      if (projectEndDateFilter) params.set('projectEndDate', projectEndDateFilter)
 
       const response = await fetch(`/api/projects/count?${params.toString()}`)
       const data = await response.json()
@@ -175,7 +223,7 @@ const ProjectDashboardFixed = () => {
   // Fetch projects data from API with pagination
   const buildQueryParams = () => {
     const params = new URLSearchParams()
-    if (debouncedSearchTerm) params.set('search', debouncedSearchTerm)
+    if (appliedSearchTerm) params.set('search', appliedSearchTerm)
     if (selectedLocation) {
       params.set('locationType', selectedLocation.type)
       params.set('locationValue', selectedLocation.value)
@@ -192,10 +240,16 @@ const ProjectDashboardFixed = () => {
     if (fundingAgencyFilter !== 'all') params.set('fundingAgencyId', String(fundingAgencyFilter))
     if (projectManagerFilter !== 'all') params.set('projectManagerId', String(projectManagerFilter))
     if (projectCoordinatorFilter !== 'all') params.set('projectCoordinatorId', String(projectCoordinatorFilter))
+    if (appliedStructureId) params.set('buildingTypeIdExact', String(appliedStructureId))
+    if (contractDateFilter) params.set('contractDate', contractDateFilter)
+    if (projectStartDateFilter) params.set('projectStartDate', projectStartDateFilter)
+    if (projectEndDateFilter) params.set('projectEndDate', projectEndDateFilter)
     return params
   }
 
-  let activeController = useRef(null)
+  const activeController = useRef(null)
+  const isInitialMountRef = useRef(true)
+  const prevDebouncedSearchRef = useRef('')
 
   const fetchProjects = async (page = 1, reset = false) => {
     try {
@@ -210,7 +264,11 @@ const ProjectDashboardFixed = () => {
 
       // Abort in-flight request to avoid race conditions
       if (activeController.current) {
-        activeController.current.abort()
+        try {
+          activeController.current.abort()
+        } catch (err) {
+          // Controller already aborted, ignore
+        }
       }
       const controller = new AbortController()
       activeController.current = controller
@@ -249,7 +307,10 @@ const ProjectDashboardFixed = () => {
         }
       }
     } catch (error) {
-      console.error('Error fetching projects:', error)
+      // Don't log AbortError as it's expected when canceling previous requests
+      if (error.name !== 'AbortError') {
+        console.error('Error fetching projects:', error)
+      }
       if (reset) {
         setProjects([])
         setFilteredProjects([])
@@ -271,30 +332,76 @@ const ProjectDashboardFixed = () => {
 
   // Initial data fetch
   useEffect(() => {
-    // Initialize filters from URL on first mount
     try {
       const get = (k) => searchParams?.get(k)
-      setStatusFilter(get('status') || 'all')
-      setPriorityFilter(get('priority') || 'all')
-      setClientFilter(get('clientId') || 'all')
-      setContractorFilter(get('contractorId') || 'all')
-      setClerkOfWorkFilter(get('cowId') || 'all')
-      setProjectServiceFilter(get('serviceId') || 'all')
-      setBuildingTypeFilter(get('buildingTypeId') || 'all')
-      setProjectTypeFilter(get('projectTypeId') || 'all')
-      setProjectCategoryFilter(get('projectCategoryId') || 'all')
-      setFundingAgencyFilter(get('fundingAgencyId') || 'all')
-      setProjectManagerFilter(get('projectManagerId') || 'all')
-      setProjectCoordinatorFilter(get('projectCoordinatorId') || 'all')
-      setSearchTerm(get('search') || '')
-      // Location will be handled by selectedLocation state
-    } catch {}
 
-    fetchProjects(1, true).finally(() => setInitialLoad(false))
+      // Read URL params
+      const urlStatus = get('status') || 'all'
+      const urlPriority = get('priority') || 'all'
+      const urlClient = get('clientId') || 'all'
+      const urlContractor = get('contractorId') || 'all'
+      const urlCow = get('cowId') || 'all'
+      const urlService = get('serviceId') || 'all'
+      const urlBuildingType = get('buildingTypeId') || 'all'
+      const urlProjectType = get('projectTypeId') || 'all'
+      const urlProjectCategory = get('projectCategoryId') || 'all'
+      const urlFundingAgency = get('fundingAgencyId') || 'all'
+      const urlPM = get('projectManagerId') || 'all'
+      const urlPC = get('projectCoordinatorId') || 'all'
+      const urlSearch = get('search') || ''
+      const urlLocType = get('locationType')
+      const urlLocValue = get('locationValue')
+      const urlStructureId = get('buildingTypeIdExact') || ''
+      const urlContractDate = get('contractDate') || ''
+      const urlStartDate = get('projectStartDate') || ''
+      const urlEndDate = get('projectEndDate') || ''
+
+      // Apply to both draft and applied states
+      setStatusFilter(urlStatus); setDraftStatusFilter(urlStatus)
+      setPriorityFilter(urlPriority); setDraftPriorityFilter(urlPriority)
+      setClientFilter(urlClient); setDraftClientFilter(urlClient)
+      setContractorFilter(urlContractor); setDraftContractorFilter(urlContractor)
+      setClerkOfWorkFilter(urlCow); setDraftClerkOfWorkFilter(urlCow)
+      setProjectServiceFilter(urlService); setDraftProjectServiceFilter(urlService)
+      setBuildingTypeFilter(urlBuildingType); setDraftBuildingTypeFilter(urlBuildingType)
+      setProjectTypeFilter(urlProjectType); setDraftProjectTypeFilter(urlProjectType)
+      setProjectCategoryFilter(urlProjectCategory); setDraftProjectCategoryFilter(urlProjectCategory)
+      setFundingAgencyFilter(urlFundingAgency); setDraftFundingAgencyFilter(urlFundingAgency)
+      setProjectManagerFilter(urlPM); setDraftProjectManagerFilter(urlPM)
+      setProjectCoordinatorFilter(urlPC); setDraftProjectCoordinatorFilter(urlPC)
+
+      setAppliedSearchTerm(urlSearch); setDraftSearchTerm(urlSearch); setSearchTerm(urlSearch)
+
+      if (urlLocType && urlLocValue) {
+        const loc = { type: urlLocType, value: urlLocValue }
+        setSelectedLocation(loc)
+        setDraftSelectedLocation(loc)
+      } else {
+        setSelectedLocation(null); setDraftSelectedLocation(null)
+      }
+
+      setAppliedStructureId(urlStructureId); setDraftStructureId(urlStructureId); // label left empty
+
+      setContractDateFilter(urlContractDate); setDraftContractDateFilter(urlContractDate)
+      setProjectStartDateFilter(urlStartDate); setDraftProjectStartDateFilter(urlStartDate)
+      setProjectEndDateFilter(urlEndDate); setDraftProjectEndDateFilter(urlEndDate)
+    } catch (e) {
+      console.warn('Failed to initialize filters from URL:', e)
+    }
+
+    // Trigger fetch after states are applied
+    setFiltersBump((b) => b + 1)
+    setInitialLoad(false)
   }, [])
 
-  // Sync URL and refetch when filters/search change - keep URL in sync
+  // Sync URL and refetch when applied filters change - keep URL in sync
   useEffect(() => {
+    // Skip on initial mount to avoid race condition with the initial fetch
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false
+      return
+    }
+
     const params = buildQueryParams()
     // reset page on filter changes
     params.set('page', '1')
@@ -307,18 +414,17 @@ const ProjectDashboardFixed = () => {
       clientFilter !== 'all' || contractorFilter !== 'all' || clerkOfWorkFilter !== 'all' ||
       projectServiceFilter !== 'all' || buildingTypeFilter !== 'all' || projectTypeFilter !== 'all' ||
       projectCategoryFilter !== 'all' || fundingAgencyFilter !== 'all' || projectManagerFilter !== 'all' ||
-      projectCoordinatorFilter !== 'all'
+      projectCoordinatorFilter !== 'all' || appliedStructureId || contractDateFilter || projectStartDateFilter || projectEndDateFilter
     
-    if (isSignificantChange) {
-    fetchProjects(1, true)
-    } else if (debouncedSearchTerm) {
-      // For search-only changes, just refetch without full reset
+    if (isSignificantChange || appliedSearchTerm !== prevDebouncedSearchRef.current) {
       fetchProjects(1, true)
     }
     
     fetchTotalCount()
+    // Track previous applied search term for next run
+    prevDebouncedSearchRef.current = appliedSearchTerm
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearchTerm, selectedLocation, statusFilter, priorityFilter, clientFilter, contractorFilter, clerkOfWorkFilter, projectServiceFilter, buildingTypeFilter, projectTypeFilter, projectCategoryFilter, fundingAgencyFilter, projectManagerFilter, projectCoordinatorFilter])
+  }, [appliedSearchTerm, selectedLocation, statusFilter, priorityFilter, clientFilter, contractorFilter, clerkOfWorkFilter, projectServiceFilter, buildingTypeFilter, projectTypeFilter, projectCategoryFilter, fundingAgencyFilter, projectManagerFilter, projectCoordinatorFilter, appliedStructureId, contractDateFilter, projectStartDateFilter, projectEndDateFilter, filtersBump])
 
   // Fetch content options for dropdowns
   useEffect(() => {
@@ -761,13 +867,131 @@ const ProjectDashboardFixed = () => {
 
   // Memoized search handlers to prevent re-renders
   const handleProjectSearchSelect = useCallback((selection) => {
-    // selection: { type: 'project_name' | 'institution_name', value: string }
-    setSearchTerm(selection.value)
-    setFiltering(true)
+    // selection: { type: 'project' | 'institution', value: string, slug?: string }
+    const v = selection.value || ''
+    // Set draft & applied search immediately
+    setDraftSearchTerm(v)
+    setAppliedSearchTerm(v)
+    setSearchTerm(v)
+    // Reset other filters to avoid accidental exclusions
+    setDraftSelectedLocation(null)
+    setSelectedLocation(null)
+    setDraftStatusFilter('all'); setStatusFilter('all')
+    setDraftPriorityFilter('all'); setPriorityFilter('all')
+    setDraftClientFilter('all'); setClientFilter('all')
+    setDraftContractorFilter('all'); setContractorFilter('all')
+    setDraftClerkOfWorkFilter('all'); setClerkOfWorkFilter('all')
+    setDraftProjectServiceFilter('all'); setProjectServiceFilter('all')
+    setDraftBuildingTypeFilter('all'); setBuildingTypeFilter('all')
+    setDraftProjectTypeFilter('all'); setProjectTypeFilter('all')
+    setDraftProjectCategoryFilter('all'); setProjectCategoryFilter('all')
+    setDraftFundingAgencyFilter('all'); setFundingAgencyFilter('all')
+    setDraftProjectManagerFilter('all'); setProjectManagerFilter('all')
+    setDraftProjectCoordinatorFilter('all'); setProjectCoordinatorFilter('all')
+    setDraftStructureSearch(''); setDraftStructureId(''); setAppliedStructureId('')
+    setDraftContractDateFilter(''); setContractDateFilter('')
+    setDraftProjectStartDateFilter(''); setProjectStartDateFilter('')
+    setDraftProjectEndDateFilter(''); setProjectEndDateFilter('')
     setCurrentPage(1)
+    // Trigger immediate refetch/update
+    setFiltersBump((b) => b + 1)
   }, [])
 
   // Removed modal version of location filter
+
+  // Draft/applied helpers
+  const hasDirtyFilters = (
+    draftSearchTerm !== appliedSearchTerm ||
+    JSON.stringify(draftSelectedLocation) !== JSON.stringify(selectedLocation) ||
+    draftStatusFilter !== statusFilter ||
+    draftPriorityFilter !== priorityFilter ||
+    draftClientFilter !== clientFilter ||
+    draftContractorFilter !== contractorFilter ||
+    draftClerkOfWorkFilter !== clerkOfWorkFilter ||
+    draftProjectServiceFilter !== projectServiceFilter ||
+    draftBuildingTypeFilter !== buildingTypeFilter ||
+    draftProjectTypeFilter !== projectTypeFilter ||
+    draftProjectCategoryFilter !== projectCategoryFilter ||
+    draftFundingAgencyFilter !== fundingAgencyFilter ||
+    draftProjectManagerFilter !== projectManagerFilter ||
+    draftProjectCoordinatorFilter !== projectCoordinatorFilter ||
+    draftStructureId !== appliedStructureId ||
+    draftContractDateFilter !== contractDateFilter ||
+    draftProjectStartDateFilter !== projectStartDateFilter ||
+    draftProjectEndDateFilter !== projectEndDateFilter
+  )
+
+  const applyFilters = () => {
+    setAppliedSearchTerm(draftSearchTerm)
+    setSearchTerm(draftSearchTerm)
+    setSelectedLocation(draftSelectedLocation)
+    setStatusFilter(draftStatusFilter)
+    setPriorityFilter(draftPriorityFilter)
+    setClientFilter(draftClientFilter)
+    setContractorFilter(draftContractorFilter)
+    setClerkOfWorkFilter(draftClerkOfWorkFilter)
+    setProjectServiceFilter(draftProjectServiceFilter)
+    setBuildingTypeFilter(draftBuildingTypeFilter)
+    setProjectTypeFilter(draftProjectTypeFilter)
+    setProjectCategoryFilter(draftProjectCategoryFilter)
+    setFundingAgencyFilter(draftFundingAgencyFilter)
+    setProjectManagerFilter(draftProjectManagerFilter)
+    setProjectCoordinatorFilter(draftProjectCoordinatorFilter)
+    setAppliedStructureId(draftStructureId)
+    setContractDateFilter(draftContractDateFilter)
+    setProjectStartDateFilter(draftProjectStartDateFilter)
+    setProjectEndDateFilter(draftProjectEndDateFilter)
+    setCurrentPage(1)
+    // Force build of new URL and refetch now by toggling applied search
+    setFiltersBump((b) => b + 1)
+  }
+
+  const resetDraftToDefaults = () => {
+    setDraftSearchTerm('')
+    setDebouncedSearchTerm('')
+    setDraftSelectedLocation(null)
+    setDraftStatusFilter('all')
+    setDraftPriorityFilter('all')
+    setDraftClientFilter('all')
+    setDraftContractorFilter('all')
+    setDraftClerkOfWorkFilter('all')
+    setDraftProjectServiceFilter('all')
+    setDraftBuildingTypeFilter('all')
+    setDraftProjectTypeFilter('all')
+    setDraftProjectCategoryFilter('all')
+    setDraftFundingAgencyFilter('all')
+    setDraftProjectManagerFilter('all')
+    setDraftProjectCoordinatorFilter('all')
+    setDraftStructureSearch('')
+    setDraftStructureId('')
+    setDraftContractDateFilter('')
+    setDraftProjectStartDateFilter('')
+    setDraftProjectEndDateFilter('')
+  }
+
+  const resetAppliedToDefaults = () => {
+    setAppliedSearchTerm('')
+    setSearchTerm('')
+    setSelectedLocation(null)
+    setStatusFilter('all')
+    setPriorityFilter('all')
+    setClientFilter('all')
+    setContractorFilter('all')
+    setClerkOfWorkFilter('all')
+    setProjectServiceFilter('all')
+    setBuildingTypeFilter('all')
+    setProjectTypeFilter('all')
+    setProjectCategoryFilter('all')
+    setFundingAgencyFilter('all')
+    setProjectManagerFilter('all')
+    setProjectCoordinatorFilter('all')
+    setAppliedStructureId('')
+    setContractDateFilter('')
+    setProjectStartDateFilter('')
+    setProjectEndDateFilter('')
+    setCurrentPage(1)
+    setFiltersBump((b) => b + 1)
+  }
 
   // Reusable Filter Component
   const FilterComponent = ({ className = "" }) => (
@@ -784,7 +1008,7 @@ const ProjectDashboardFixed = () => {
             Search Projects
           </label>
           <ProjectSearchDropdown
-              value={searchTerm}
+              value={draftSearchTerm}
             onSelect={handleProjectSearchSelect}
             placeholder="Search by project name or institution name..."
             />
@@ -796,11 +1020,26 @@ const ProjectDashboardFixed = () => {
             Filter by Location
           </label>
           <LocationSearchDropdown
-            selectedLocation={selectedLocation}
+            selectedLocation={draftSelectedLocation}
             onLocationSelect={handleLocationSelect}
             onLocationClear={handleLocationClear}
             placeholder="Search by MMDA, region, country, address, city/town..."
           />
+        </div>
+
+
+
+               {/* Structure Search (Building Types by name/category/code) */}
+               <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Structure
+          </label>
+          <StructureSearchDropdown
+            value={draftStructureSearch}
+            onSelect={(s) => { setDraftStructureSearch(s.label || ''); setDraftStructureId(s.id ? String(s.id) : '') }}
+            placeholder="Search by structure type, shape (category), or code..."
+          />
+          {/* <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Examples: Classroom, Straight, BT-001</p> */}
         </div>
 
         {/* Project Overview Filters Group */}
@@ -820,8 +1059,8 @@ const ProjectDashboardFixed = () => {
                     Status
                   </label>
                   <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
+                    value={draftStatusFilter}
+                    onChange={(e) => setDraftStatusFilter(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="all">All Status</option>
@@ -840,8 +1079,8 @@ const ProjectDashboardFixed = () => {
                     Priority
                   </label>
                   <select
-                    value={priorityFilter}
-                    onChange={(e) => setPriorityFilter(e.target.value)}
+                    value={draftPriorityFilter}
+                    onChange={(e) => setDraftPriorityFilter(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="all">All Priorities</option>
@@ -857,8 +1096,8 @@ const ProjectDashboardFixed = () => {
                     Project Service
                   </label>
                   <select
-                    value={projectServiceFilter}
-                    onChange={(e) => setProjectServiceFilter(e.target.value)}
+                    value={draftProjectServiceFilter}
+                    onChange={(e) => setDraftProjectServiceFilter(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="all">All Services</option>
@@ -868,29 +1107,15 @@ const ProjectDashboardFixed = () => {
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Building Type
-                  </label>
-                  <select
-                    value={buildingTypeFilter}
-                    onChange={(e) => setBuildingTypeFilter(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                  >
-                    <option value="all">All Building Types</option>
-                    {buildingTypesOptions.map(type => (
-                      <option key={type.id} value={type.id}>{type.buildingType}</option>
-                    ))}
-                  </select>
-                </div>
+                {/* Removed Building Type dropdown; use free-text Structure search below */}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Project Type
                   </label>
                   <select
-                    value={projectTypeFilter}
-                    onChange={(e) => setProjectTypeFilter(e.target.value)}
+                    value={draftProjectTypeFilter}
+                    onChange={(e) => setDraftProjectTypeFilter(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="all">All Project Types</option>
@@ -905,8 +1130,8 @@ const ProjectDashboardFixed = () => {
                     Project Category
                   </label>
                   <select
-                    value={projectCategoryFilter}
-                    onChange={(e) => setProjectCategoryFilter(e.target.value)}
+                    value={draftProjectCategoryFilter}
+                    onChange={(e) => setDraftProjectCategoryFilter(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="all">All Project Categories</option>
@@ -915,12 +1140,53 @@ const ProjectDashboardFixed = () => {
                     ))}
                   </select>
                 </div>
+
+                {/* Dates */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Contract Date
+                  </label>
+                  <input
+                    type="date"
+                    value={draftContractDateFilter}
+                    onChange={(e) => setDraftContractDateFilter(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Project Start Date
+                  </label>
+                  <input
+                    type="date"
+                    value={draftProjectStartDateFilter}
+                    onChange={(e) => setDraftProjectStartDateFilter(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Project End Date
+                  </label>
+                  <input
+                    type="date"
+                    value={draftProjectEndDateFilter}
+                    onChange={(e) => setDraftProjectEndDateFilter(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  />
+                </div>
               </div>
             </div>
           )}
         </div>
 
+        
+
         {/* Location filtering is now handled by the location search input above */}
+
+ 
 
         {/* Stakeholders Filters Group */}
         <div className="border border-gray-200 dark:border-gray-600 rounded-lg">
@@ -939,8 +1205,8 @@ const ProjectDashboardFixed = () => {
                     Client
                   </label>
                   <select
-                    value={clientFilter}
-                    onChange={(e) => setClientFilter(e.target.value)}
+                    value={draftClientFilter}
+                    onChange={(e) => setDraftClientFilter(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="all">All Clients</option>
@@ -955,8 +1221,8 @@ const ProjectDashboardFixed = () => {
                     Contractor
                   </label>
                   <select
-                    value={contractorFilter}
-                    onChange={(e) => setContractorFilter(e.target.value)}
+                    value={draftContractorFilter}
+                    onChange={(e) => setDraftContractorFilter(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="all">All Contractors</option>
@@ -971,8 +1237,8 @@ const ProjectDashboardFixed = () => {
                     Clerk of Works
                   </label>
                   <select
-                    value={clerkOfWorkFilter}
-                    onChange={(e) => setClerkOfWorkFilter(e.target.value)}
+                    value={draftClerkOfWorkFilter}
+                    onChange={(e) => setDraftClerkOfWorkFilter(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="all">All Clerk of Works</option>
@@ -987,8 +1253,8 @@ const ProjectDashboardFixed = () => {
                     Funding Agency
                   </label>
                   <select
-                    value={fundingAgencyFilter}
-                    onChange={(e) => setFundingAgencyFilter(e.target.value)}
+                    value={draftFundingAgencyFilter}
+                    onChange={(e) => setDraftFundingAgencyFilter(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="all">All Funding Agencies</option>
@@ -1003,8 +1269,8 @@ const ProjectDashboardFixed = () => {
                     Project Manager
                   </label>
                   <select
-                    value={projectManagerFilter}
-                    onChange={(e) => setProjectManagerFilter(e.target.value)}
+                    value={draftProjectManagerFilter}
+                    onChange={(e) => setDraftProjectManagerFilter(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="all">All Project Managers</option>
@@ -1019,8 +1285,8 @@ const ProjectDashboardFixed = () => {
                     Project Coordinator
                   </label>
                   <select
-                    value={projectCoordinatorFilter}
-                    onChange={(e) => setProjectCoordinatorFilter(e.target.value)}
+                    value={draftProjectCoordinatorFilter}
+                    onChange={(e) => setDraftProjectCoordinatorFilter(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="all">All Project Coordinators</option>
@@ -1036,21 +1302,21 @@ const ProjectDashboardFixed = () => {
 
         {/* Clear All Filters Button */}
         <button
+          onClick={applyFilters}
+          disabled={!hasDirtyFilters}
+          className={`w-full px-4 py-2 mb-2 text-white text-sm font-medium rounded-lg transition-colors ${hasDirtyFilters ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-400 cursor-not-allowed'}`}
+        >
+          Apply Filters
+        </button>
+        <button
           onClick={() => {
-            setSearchTerm('')
-            setSelectedLocation(null)
-            setStatusFilter('all')
-            setPriorityFilter('all')
-            setClientFilter('all')
-            setContractorFilter('all')
-            setClerkOfWorkFilter('all')
-            setProjectServiceFilter('all')
-            setBuildingTypeFilter('all')
-            setProjectTypeFilter('all')
-            setProjectCategoryFilter('all')
-            setFundingAgencyFilter('all')
-            setProjectManagerFilter('all')
-            setProjectCoordinatorFilter('all')
+            // Reset draft and applied, trigger initial fetch
+            resetDraftToDefaults()
+            resetAppliedToDefaults()
+            setTimeout(() => {
+              fetchProjects(1, true)
+              fetchTotalCount()
+            }, 50)
           }}
           className="w-full px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors"
         >

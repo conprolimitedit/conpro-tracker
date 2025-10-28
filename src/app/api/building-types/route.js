@@ -8,16 +8,26 @@ export async function GET(request) {
         const { searchParams } = new URL(request.url)
         const pageParam = parseInt(searchParams.get('page') || '1', 10)
         const limitParam = parseInt(searchParams.get('limit') || '1000', 10)
+        const searchQuery = searchParams.get('search') || ''
         const page = Number.isNaN(pageParam) || pageParam < 1 ? 1 : pageParam
         const limit = Number.isNaN(limitParam) || limitParam < 1 ? 1000 : limitParam
         const from = (page - 1) * limit
         const to = from + limit - 1
 
-        const { data, error } = await supabase
+        let query = supabase
             .from('buildingTypes')
             .select('id, buildingType, category, code, created_at')
             .order('id', { ascending: true })
-            .range(from, to)
+
+        // Apply search filter if search term is provided
+        if (searchQuery) {
+            query = query.or(`buildingType.ilike.%${searchQuery}%,category.ilike.%${searchQuery}%,code.ilike.%${searchQuery}%`)
+        }
+
+        // Apply pagination
+        query = query.range(from, to)
+
+        const { data, error } = await query
 
         if (error) {
             console.error('Database error:', error)

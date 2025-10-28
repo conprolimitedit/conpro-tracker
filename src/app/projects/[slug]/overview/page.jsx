@@ -1,11 +1,12 @@
 'use client'
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { FiSave } from 'react-icons/fi'
+import { FiSave, FiTrash2 } from 'react-icons/fi'
 import { toast } from 'react-toastify'
 import MultiSelectDropdown from '../../../components/MultiSelectDropdown'
 import EnhancedLocationSelector from '../../../components/EnhancedLocationSelector'
 import LinkedProjectsSelector from '../../../components/LinkedProjectsSelector'
+import EnhancedStructuresSelector from '../../../components/EnhancedStructuresSelector'
 import { useAuth } from '../../../contexts/AuthContext'
 // import { supabase } from '../../../lib/supabaseClient' // Not needed for file upload
 // Remove dummy data import - we'll fetch real data from APIs
@@ -16,20 +17,24 @@ const ProjectOverviewPage = () => {
   const { slug } = params
   const isNewProject = slug === 'addNewProject'
   const fileInputRef = useRef(null)
-  const { user } = useAuth()
+  const permissionCheckedRef = useRef(false)
+  const { user, loading: authLoading } = useAuth()
   
   // Check if user can edit projects (admin or projectManager)
   const canEditProjects = user?.userRole === 'admin' || user?.userRole === 'projectManager'
   
   const [formData, setFormData] = useState({
+    projectId: '',
     institutionName: '',
     projectName: '',
     coverImage: null,
     location: {
-      country: '',
+      country: 'Ghana', // Set default country to Ghana
       region: '',
       mmda: '',
       city_town: '',
+      city: '', // For form compatibility with EnhancedLocationSelector
+      town: '', // For form compatibility with EnhancedLocationSelector
       gpsCoordinates: { lat: '', lng: '' },
       address: '',
       additional_info: ''
@@ -44,7 +49,7 @@ const ProjectOverviewPage = () => {
     projectTypes: [],
     projectServices: [],
     projectDescription: '',
-    projectStatus: '',
+    projectStatus: 'planning',
     projectPriority: 'medium',
     projectDetails: '',
     projectCOW: [],
@@ -52,6 +57,7 @@ const ProjectOverviewPage = () => {
     projectCoordinators: [], // Added project coordinators
     handingOverDate: '',
     contractDate: '',
+    revisedDate: '',
     plannedProgress: '',
     cumulativeProgress: '',
     sitePossessionDate: '',
@@ -64,6 +70,8 @@ const ProjectOverviewPage = () => {
 
   const [loading, setLoading] = useState(!isNewProject)
   const [saving, setSaving] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   
   // Content data states
   const [clients, setClients] = useState([])
@@ -81,8 +89,19 @@ const ProjectOverviewPage = () => {
   const [gpsUserEdited, setGpsUserEdited] = useState(false)
 
   useEffect(() => {
+    // Wait for auth to finish loading before checking permissions
+    if (authLoading) {
+      return
+    }
+
+    // Prevent multiple permission checks
+    if (permissionCheckedRef.current) {
+      return
+    }
+
     // Check access for new project creation
     if (isNewProject && !canEditProjects) {
+      permissionCheckedRef.current = true
       toast.error('You do not have permission to create new projects. Only admins and project managers can create projects.', {
         position: "top-right",
         autoClose: 5000,
@@ -91,6 +110,8 @@ const ProjectOverviewPage = () => {
       return
     }
 
+    permissionCheckedRef.current = true
+
     // Always fetch content data
     fetchContentData()
     
@@ -98,7 +119,8 @@ const ProjectOverviewPage = () => {
     if (!isNewProject && slug !== 'addNewProject') {
       fetchProjectData()
     }
-  }, [slug, isNewProject, canEditProjects, router])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug, isNewProject, canEditProjects, authLoading, router])
 
   const fetchContentData = async () => {
     try {
@@ -120,7 +142,7 @@ const ProjectOverviewPage = () => {
       ] = await Promise.all([
         fetch('/api/clients'),
         fetch('/api/contractors'),
-        fetch('/api/building-types'),
+        fetch('/api/building-types?limit=15'), // Fetch only first 15 for initial load
         fetch('/api/project-types'),
         fetch('/api/services'),
         fetch('/api/project-category'),
@@ -196,14 +218,17 @@ const ProjectOverviewPage = () => {
       
       // Transform the project data to match the form structure
       const transformedData = {
+        projectId: project.project_id || '',
         institutionName: project.institution_name || '',
         projectName: project.project_name || '',
         coverImage: project.project_cover_image?.url || null,
         location: {
-          country: project.project_location?.country || '',
+          country: project.project_location?.country || 'Ghana', // Default to Ghana if not set
           region: project.project_location?.region || '',
           mmda: project.project_location?.mmda || '',
           city_town: project.project_location?.city_town || '',
+          city: project.project_location?.mmda || '', // Map mmda to city for form compatibility
+          town: project.project_location?.city_town || '', // Map city_town to town for form compatibility
           gpsCoordinates: project.project_location?.gpsCoordinates || { lat: '', lng: '' },
           address: project.project_location?.address || '',
           additional_info: project.project_location?.additional_info || ''
@@ -406,9 +431,14 @@ const ProjectOverviewPage = () => {
       const requiredFields = ['projectName', 'slug']
       const missingFields = requiredFields.filter(field => !formData[field])
       
-      // Validate location fields
+      // Validate location fields - check both old fields (city, town) and new fields (mmda, city_town)
+      const mmda = formData.location.city || formData.location.mmda || ''
+      const city_town = formData.location.town || formData.location.city_town || ''
       const locationFields = ['country', 'region', 'mmda']
-      const missingLocationFields = locationFields.filter(field => !formData.location[field])
+      const missingLocationFields = locationFields.filter(field => {
+        if (field === 'mmda') return !mmda
+        return !formData.location[field]
+      })
       
       if (missingFields.length > 0) {
         toast.error(`Please fill in required fields: ${missingFields.join(', ')}`)
@@ -422,12 +452,12 @@ const ProjectOverviewPage = () => {
         return
       }
       
-      // Prepare location data with country name instead of code
+      // Prepare location data - map city to mmda and town to city_town
       const locationData = {
         country: formData.location.country, // This should be the full country name
         region: formData.location.region,
-        mmda: formData.location.mmda,
-        city_town: formData.location.city_town,
+        mmda: mmda, // Map from city or mmda
+        city_town: city_town, // Map from town or city_town
         gpsCoordinates: formData.location.gpsCoordinates,
         address: formData.location.address,
         additional_info: formData.location.additional_info
@@ -435,9 +465,9 @@ const ProjectOverviewPage = () => {
       
       // Prepare data for API - using IDs for all multi-select fields
       const projectData = {
-        institution_name: formData.institutionName,
-        project_name: formData.projectName,
-        project_slug: formData.slug,
+        institution_name: formData.institutionName.trim(),
+        project_name: formData.projectName.trim(),
+        project_slug: formData.slug.trim(),
         contract_date: formData.contractDate,
         project_priority: formData.projectPriority,
         // project_cover_image will be handled separately in FormData
@@ -517,13 +547,44 @@ const ProjectOverviewPage = () => {
     }
   }
 
-  if (loading || contentLoading) {
+  const handleDelete = async () => {
+    if (isNewProject) return
+    if (!formData.projectId) {
+      toast.error('Missing project_id. Cannot delete.')
+      return
+    }
+    setDeleting(true)
+    
+    try {
+      const response = await fetch(`/api/projects/${formData.projectId}`, {
+        method: 'DELETE'
+      })
+      
+      const result = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to delete project')
+      }
+      
+      toast.success('Project deleted successfully!')
+      router.push('/projects')
+      
+    } catch (error) {
+      console.error('❌ Error deleting project:', error)
+      toast.error(`Error deleting project: ${error.message}`)
+    } finally {
+      setDeleting(false)
+      setShowDeleteModal(false)
+    }
+  }
+
+  if (authLoading || loading || contentLoading) {
     return (
       <div className="flex w-full h-full items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
           <p className="mt-4 text-sm text-gray-600">
-            {loading ? 'Loading project...' : 'Loading content data...'}
+            {authLoading ? 'Verifying authentication...' : loading ? 'Loading project...' : 'Loading content data...'}
           </p>
         </div>
       </div>
@@ -534,9 +595,18 @@ const ProjectOverviewPage = () => {
     <div className="h-full flex flex-col min-w-0">
       {/* Header */}
       <div className="flex mt-[2em] justify-between items-center mb-6 px-6">
-        <h2 className="  font-semibold text-gray-900 dark:text-white">
+        <h2 className="font-semibold text-gray-900 dark:text-white">
           {isNewProject ? 'Create New Project' : 'Edit Project'} - Overview
         </h2>
+        {!isNewProject && canEditProjects && (
+          <button
+            onClick={() => setShowDeleteModal(true)}
+            className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors"
+          >
+            <FiTrash2 className="w-4 h-4" />
+            <span>Delete Project</span>
+          </button>
+        )}
       </div>
 
       {/* Scrollable Form Content */}
@@ -549,6 +619,20 @@ const ProjectOverviewPage = () => {
               Basic Information
             </h5>
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {!isNewProject && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    project_id
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.projectId}
+                    readOnly
+                    disabled
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300"
+                  />
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Institution Name *
@@ -567,13 +651,11 @@ const ProjectOverviewPage = () => {
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Structure
                 </label>
-                <MultiSelectDropdown
-                  options={buildingTypes}
+                <EnhancedStructuresSelector
                   selectedItems={formData.buildingTypes}
                   onSelectionChange={handleBuildingTypesChange}
                   placeholder="Select structures..."
                   searchPlaceholder="Search structures..."
-                  nameField="buildingType"
                 />
               </div>
 
@@ -794,6 +876,7 @@ const ProjectOverviewPage = () => {
                     value={formData.projectStatus}
                     onChange={handleInputChange}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    required
                   >
                     <option value="">Select Status</option>
                     <option value="planning">Planning</option>
@@ -1180,6 +1263,42 @@ const ProjectOverviewPage = () => {
             <p className="text-sm text-gray-600 dark:text-gray-400">
               Please wait while your changes are being saved
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1200]">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-8 w-full max-w-md mx-4">
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-16 h-16 bg-red-100 dark:bg-red-900 rounded-full flex items-center justify-center">
+                <FiTrash2 className="w-8 h-8 text-red-600 dark:text-red-400" />
+              </div>
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2 text-center">
+              Delete Project?
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-6 text-center">
+              Are you sure you want to delete <strong>{formData.projectName || 'this project'}</strong>? 
+              This action cannot be undone. All project data, images, and links will be permanently deleted.
+            </p>
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                disabled={deleting}
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {deleting ? 'Deleting...' : 'Delete Project'}
+              </button>
+            </div>
           </div>
         </div>
       )}

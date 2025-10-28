@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { FiSearch } from 'react-icons/fi'
 
-const ProjectSearchDropdown = ({ value, onSelect, placeholder = 'Search by project or institution...' }) => {
+const StructureSearchDropdown = ({ value, onSelect, placeholder = 'Search by structure type, shape (category), or code...' }) => {
   const [term, setTerm] = useState(value || '')
   const [debounced, setDebounced] = useState(term)
   const [results, setResults] = useState([])
@@ -17,17 +17,18 @@ const ProjectSearchDropdown = ({ value, onSelect, placeholder = 'Search by proje
 
   useEffect(() => {
     const fetchResults = async () => {
-      if (!debounced || debounced.length < 2) {
+      if (!debounced || debounced.trim().length < 2) {
         setResults([])
         setLoading(false)
         return
       }
       setLoading(true)
       try {
-        const params = new URLSearchParams({ page: '1', limit: '10', search: debounced })
-        const res = await fetch(`/api/projects?${params.toString()}`)
+        const params = new URLSearchParams({ limit: '10', search: debounced })
+        const res = await fetch(`/api/building-types?${params.toString()}`)
         const data = await res.json()
-        setResults((data.projects || []).slice(0, 10))
+        const list = (data.buildingTypes || []).slice(0, 10)
+        setResults(list)
       } catch (e) {
         setResults([])
       } finally {
@@ -45,16 +46,16 @@ const ProjectSearchDropdown = ({ value, onSelect, placeholder = 'Search by proje
     return () => document.removeEventListener('mousedown', onDoc)
   }, [])
 
-  const toLower = (s) => (s || '').toLowerCase()
-  const handleSelect = useCallback((project) => {
-    const selected = project.project_name || project.institution_name
-    const t = debounced && project.project_name && toLower(project.project_name).includes(toLower(debounced))
-      ? 'project'
-      : (debounced && project.institution_name && toLower(project.institution_name).includes(toLower(debounced)) ? 'institution' : 'project')
-    setTerm(selected)
-    onSelect({ type: t, value: selected, slug: project.project_slug })
+  const handleSelect = useCallback((bt) => {
+    const parts = []
+    if (bt.buildingType) parts.push(bt.buildingType)
+    if (bt.category) parts.push(bt.category)
+    if (bt.code) parts.push(bt.code)
+    const label = parts.join(' - ') || bt.name || 'Structure'
+    setTerm(label)
+    onSelect({ id: bt.id, label, buildingType: bt.buildingType, category: bt.category, code: bt.code })
     setOpen(false)
-  }, [onSelect, debounced])
+  }, [onSelect])
 
   return (
     <div className="relative" ref={ref}>
@@ -65,30 +66,24 @@ const ProjectSearchDropdown = ({ value, onSelect, placeholder = 'Search by proje
         placeholder={placeholder}
         className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
       />
-      {open && term.length >= 2 && (
+      {open && term.trim().length >= 2 && (
         <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
           {loading ? (
             <div className="p-3 text-sm text-gray-500">Searching...</div>
           ) : results.length === 0 ? (
             <div className="p-3 text-sm text-gray-500">No matches</div>
           ) : (
-            results.map((p) => {
-              const isProject = debounced && toLower(p.project_name || '').includes(toLower(debounced))
-              const isInstitution = debounced && toLower(p.institution_name || '').includes(toLower(debounced))
-              const badge = isProject ? 'Project' : (isInstitution ? 'Institution' : '')
-              return (
+            results.map((bt) => (
               <div
-                key={p.project_id}
-                onClick={() => handleSelect(p)}
+                key={bt.id}
+                onClick={() => handleSelect(bt)}
                 className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
               >
-                <div className="text-sm font-medium text-gray-900 dark:text-white line-clamp-1">{p.project_name}</div>
-                <div className="text-xs text-gray-500 line-clamp-1 flex items-center gap-2">
-                  <span>{p.institution_name}</span>
-                  {badge && <span className={`px-1 py-0.5 rounded text-[10px] ${isProject ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}>{badge}</span>}
+                <div className="text-sm font-medium text-gray-900 dark:text-white line-clamp-1">
+                  {[bt.buildingType, bt.category, bt.code].filter(Boolean).join(' - ')}
                 </div>
               </div>
-            )})
+            ))
           )}
         </div>
       )}
@@ -96,6 +91,6 @@ const ProjectSearchDropdown = ({ value, onSelect, placeholder = 'Search by proje
   )
 }
 
-export default ProjectSearchDropdown
+export default StructureSearchDropdown
 
 

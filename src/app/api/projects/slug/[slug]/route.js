@@ -202,13 +202,23 @@ export async function PUT(request, { params }) {
     }
 
     // Prepare update data
+    // Trim whitespace from institution name and project name
+    const trimmedInstitutionName = body.institution_name ? body.institution_name.trim() : ''
+    const trimmedProjectName = body.project_name ? body.project_name.trim() : ''
+    
+    // Set default country to Ghana if not specified
+    const projectLocation = body.project_location || {}
+    if (!projectLocation.country) {
+      projectLocation.country = 'Ghana'
+    }
+    
     const updateData = {
-      institution_name: body.institution_name || '',
-      project_name: body.project_name,
+      institution_name: trimmedInstitutionName,
+      project_name: trimmedProjectName,
       project_slug: body.project_slug,
       project_priority: body.project_priority || 'medium',
       project_cover_image: coverImageData || body.project_cover_image || null,
-      project_location: body.project_location || null,
+      project_location: projectLocation,
       project_categories: Array.isArray(body.project_categories) ? body.project_categories : (body.project_categories ? [body.project_categories] : []),
       project_clients: body.project_clients || [],
       funding_agencies: Array.isArray(body.funding_agencies) ? body.funding_agencies : (body.funding_agencies ? [body.funding_agencies] : []),
@@ -310,28 +320,123 @@ export async function DELETE(request, { params }) {
     const { slug } = params
     console.log('🚀 Deleting project by slug:', slug)
     
-    // Fetch cover image path before deletion
-    let coverPath = null
-    try {
-      const { data: existing } = await supabase
-        .from('projects')
-        .select('project_cover_image')
-        .eq('project_slug', slug)
-        .single()
-      coverPath = existing?.project_cover_image?.path || null
-    } catch {}
-
-    // Fetch status for summary decrement
-    const { data: beforeProject } = await supabase
+    // Fetch project before deletion
+    const { data: existingProject } = await supabase
       .from('projects')
-      .select('project_status')
+      .select('project_id, project_cover_image, project_gallery, project_status')
       .eq('project_slug', slug)
       .single()
 
+    if (!existingProject) {
+      return NextResponse.json({
+        success: false,
+        error: 'Project not found'
+      }, { status: 404 })
+    }
+
+    const projectId = existingProject.project_id
+    
+    // Find all projects that have this project in their linked_projects
+    console.log('🔍 Finding projects that reference this project in linked_projects...')
+    const { data: allProjects, error: fetchError } = await supabase
+      .from('projects')
+      .select('project_id, project_slug, linked_projects')
+    
+    if (fetchError) {
+      console.warn('⚠️ Could not fetch all projects to check linked_projects:', fetchError.message)
+    } else {
+      // Update all projects that reference this project
+      for (const project of allProjects) {
+        if (!project.linked_projects || !Array.isArray(project.linked_projects)) continue
+        
+        // Check if this project is referenced
+        const hasReference = project.linked_projects.some(linked => {
+          if (typeof linked === 'string') {
+            // If it's a JSON string, parse it
+            try {
+              const parsed = JSON.parse(linked)
+              return parsed.project_id === projectId
+            } catch {
+              // If parsing fails, skip
+              return false
+            }
+          }
+          // If it's an object, check project_id directly
+          return linked.project_id === projectId
+        })
+        
+        if (hasReference) {
+          console.log(`🔗 Removing reference from project: ${project.project_slug}`)
+          // Filter out this project from linked_projects
+          const updatedLinkedProjects = project.linked_projects.filter(linked => {
+            if (typeof linked === 'string') {
+              try {
+                const parsed = JSON.parse(linked)
+                return parsed.project_id !== projectId
+              } catch {
+                return linked !== projectId
+              }
+            }
+            return linked.project_id !== projectId
+          })
+          
+          // Update the project
+          const { error: updateError } = await supabase
+            .from('projects')
+            .update({ linked_projects: updatedLinkedProjects })
+            .eq('project_id', project.project_id)
+          
+          if (updateError) {
+            console.warn(`⚠️ Failed to update linked_projects for project ${project.project_slug}:`, updateError.message)
+          } else {
+            console.log(`✅ Removed link from project: ${project.project_slug}`)
+          }
+        }
+      }
+    }
+
+    // Get all files to delete from storage
+    const filesToDelete = []
+    
+    // Add cover image
+    if (existingProject.project_cover_image) {
+      try {
+        const coverImage = typeof existingProject.project_cover_image === 'string' 
+          ? JSON.parse(existingProject.project_cover_image) 
+          : existingProject.project_cover_image
+        
+        if (coverImage.path) {
+          filesToDelete.push(coverImage.path)
+        }
+      } catch (e) {
+        console.warn('⚠️ Could not parse cover image for deletion:', e.message)
+      }
+    }
+    
+    // Add gallery images
+    if (existingProject.project_gallery) {
+      try {
+        const gallery = typeof existingProject.project_gallery === 'string'
+          ? JSON.parse(existingProject.project_gallery)
+          : existingProject.project_gallery
+        
+        if (Array.isArray(gallery)) {
+          gallery.forEach(image => {
+            if (typeof image === 'object' && image.path) {
+              filesToDelete.push(image.path)
+            }
+          })
+        }
+      } catch (e) {
+        console.warn('⚠️ Could not parse gallery images for deletion:', e.message)
+      }
+    }
+    
+    // Delete the project from database
     const { data: deletedProject, error } = await supabase
       .from('projects')
       .delete()
-      .eq('project_slug', slug)
+      .eq('project_id', projectId)
       .select()
 
     if (error) {
@@ -350,41 +455,40 @@ export async function DELETE(request, { params }) {
       }, { status: 404 })
     }
 
-    console.log('✅ Project deleted successfully by slug:', deletedProject[0].project_name)
-    try {
-      const col = statusToColumn(beforeProject?.project_status)
-      if (col) {
-        const summary = await readSummary(supabase)
-        const next = { ...summary }
-        next[col] = Math.max(0, (Number(next[col]) || 0) - 1)
-        next.total_projects = Math.max(0, (Number(next.total_projects) || 0) - 1)
-        await writeSummary(supabase, next)
+    console.log('✅ Project deleted successfully from database')
+
+    // Update projects_summary
+    const col = statusToColumn(existingProject?.project_status)
+    const summary = await readSummary(supabase)
+    const next = { ...summary }
+    if (col) next[col] = Math.max(0, (Number(next[col]) || 0) - 1)
+    next.total_projects = Math.max(0, (Number(next.total_projects) || 0) - 1)
+    await writeSummary(supabase, next)
+    console.log('✅ Updated projects_summary')
+    
+    // Delete all files from storage
+    if (filesToDelete.length > 0) {
+      console.log(`🗑️ Deleting ${filesToDelete.length} files from storage...`)
+      const { data: deletedFiles, error: removeErr } = await supabase
+        .storage
+        .from('conproProjectsBucket')
+        .remove(filesToDelete)
+      
+      if (removeErr) {
+        console.warn('⚠️ Failed to delete some files from storage:', removeErr.message)
+      } else {
+        console.log('🧹 Storage files deleted:', deletedFiles?.length || 0)
       }
-    } catch (sumErr) {
-      console.warn('⚠️ Failed to update projects_summary after delete:', sumErr?.message)
     }
     
-    // Attempt to delete cover image from storage (best-effort)
-    try {
-      if (coverPath) {
-        const { error: removeErr } = await supabase
-          .storage
-          .from('conproProjectsBucket')
-          .remove([coverPath])
-        if (removeErr) {
-          console.warn('⚠️ Failed to delete cover image on project delete:', coverPath, removeErr.message)
-        }
-      }
-    } catch {}
-
     return NextResponse.json({
       success: true,
       message: 'Project deleted successfully',
       project: deletedProject[0]
     })
-    
+  
   } catch (error) {
-    console.error('💥 Delete project by slug error:', error)
+    console.error('💥 Delete project error:', error)
     return NextResponse.json({
       success: false,
       error: 'Internal server error',
