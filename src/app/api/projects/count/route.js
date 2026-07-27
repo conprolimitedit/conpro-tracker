@@ -1,4 +1,9 @@
 import { supabase } from '@/app/lib/supabaseClient'
+import {
+  buildMultiFieldIlikeOr,
+  PROJECT_SEARCH_FIELDS,
+  quotePostgrestValue,
+} from '@/app/lib/postgrestSearch'
 
 export async function GET(request) {
   try {
@@ -7,10 +12,16 @@ export async function GET(request) {
     // Build the query with all filters
     let query = supabase.from('projects').select('project_id', { count: 'exact', head: true })
     
-    // Apply search filter
+    // Exact project pin takes precedence over free-text search
+    const projectId = searchParams.get('projectId')
+    const projectSlug = searchParams.get('projectSlug')
     const search = searchParams.get('search')
-    if (search) {
-      query = query.or(`project_name.ilike.%${search}%,project_description.ilike.%${search}%,institution_name.ilike.%${search}%,project_location->>mmda.ilike.%${search}%,project_location->>region.ilike.%${search}%,project_location->>country.ilike.%${search}%,project_location->>address.ilike.%${search}%,project_location->>city_town.ilike.%${search}%`)
+    if (projectId) {
+      query = query.eq('project_id', projectId)
+    } else if (projectSlug) {
+      query = query.eq('project_slug', projectSlug)
+    } else if (search) {
+      query = query.or(buildMultiFieldIlikeOr(PROJECT_SEARCH_FIELDS, search))
     }
     
     // Apply status filter
@@ -89,7 +100,7 @@ export async function GET(request) {
     // Structure free-text search (building types by name/category/code)
     const buildingTypeSearch = searchParams.get('buildingTypeSearch')
     if (buildingTypeSearch) {
-      const btPattern = `%${buildingTypeSearch}%`
+      const btPattern = quotePostgrestValue(`%${buildingTypeSearch}%`)
       const { data: btRows, error: btErr } = await supabase
         .from('building_types')
         .select('id')
@@ -112,7 +123,7 @@ export async function GET(request) {
     if (projectStartDate) query = query.eq('project_start_date', projectStartDate)
     if (projectEndDate) query = query.eq('project_end_date', projectEndDate)
 
-    const { count, error } = await query
+    let { count, error } = await query
 
     if (error) {
       console.error('Error getting project count:', error)
@@ -120,6 +131,37 @@ export async function GET(request) {
         success: false,
         error: 'Failed to get project count'
       }, { status: 500 })
+    }
+
+    // Align with list API: exact project_name fallback when free-text search returns 0
+    const anyOtherFilters = Boolean(
+      (status && status !== 'all') ||
+      (priority && priority !== 'all') ||
+      (clientId && clientId !== 'all') ||
+      (contractorId && contractorId !== 'all') ||
+      (cowId && cowId !== 'all') ||
+      (serviceId && serviceId !== 'all') ||
+      (buildingTypeId && buildingTypeId !== 'all') ||
+      buildingTypeIdExact ||
+      (projectTypeId && projectTypeId !== 'all') ||
+      (projectCategoryId && projectCategoryId !== 'all') ||
+      (fundingAgencyId && fundingAgencyId !== 'all') ||
+      (projectManagerId && projectManagerId !== 'all') ||
+      (projectCoordinatorId && projectCoordinatorId !== 'all') ||
+      (locationType && locationValue) ||
+      buildingTypeSearch ||
+      contractDate ||
+      projectStartDate ||
+      projectEndDate
+    )
+    if (search && !projectId && !projectSlug && (count === 0 || count == null) && !anyOtherFilters) {
+      const { count: exactCount, error: exactErr } = await supabase
+        .from('projects')
+        .select('project_id', { count: 'exact', head: true })
+        .eq('project_name', search)
+      if (!exactErr && typeof exactCount === 'number') {
+        count = exactCount
+      }
     }
 
     return Response.json({

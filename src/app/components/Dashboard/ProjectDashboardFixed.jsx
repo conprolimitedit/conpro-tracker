@@ -1,5 +1,5 @@
 'use client'
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { FiMapPin, FiCalendar, FiUser, FiClock, FiEye, FiSearch, FiFilter, FiDollarSign, FiMap, FiImage, FiList, FiChevronDown, FiChevronRight, FiPlus, FiEdit } from 'react-icons/fi'
 import { useScroll, useMotionValueEvent } from 'framer-motion'
@@ -11,6 +11,8 @@ import StructureSearchDropdown from '../StructureSearchDropdown'
 import ProjectList from '../Projects/ProjectList'
 import { MdCancel } from "react-icons/md";
 import { useAuth } from '../../contexts/AuthContext'
+
+const MemoProjectMap = memo(ProjectMap)
 
 const ProjectDashboardFixed = () => {
   const router = useRouter()
@@ -46,13 +48,13 @@ const ProjectDashboardFixed = () => {
   })
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedLocation, setSelectedLocation] = useState(null)
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
   // Applied vs Draft filter state
   const [appliedSearchTerm, setAppliedSearchTerm] = useState('')
   const [draftSearchTerm, setDraftSearchTerm] = useState('')
+  // Exact project pin (from URL / optional) — preferred over free-text search when set
+  const [appliedProjectId, setAppliedProjectId] = useState('')
   const [draftSelectedLocation, setDraftSelectedLocation] = useState(null)
   const [totalProjectsCount, setTotalProjectsCount] = useState(0)
-  const [isSearching, setIsSearching] = useState(false)
   const [hasMounted, setHasMounted] = useState(false)
   
   // Scroll tracking refs (list container and its inner content)
@@ -107,6 +109,7 @@ const ProjectDashboardFixed = () => {
   // Bump to force refetch after apply/clear even if values equal previous
   const [filtersBump, setFiltersBump] = useState(0)
   const structureInputRef = useRef(null)
+  const projectSearchRef = useRef(null)
   const handleStructureChange = (e) => {
     const val = e.target.value
     setDraftStructureSearch(val)
@@ -124,21 +127,25 @@ const ProjectDashboardFixed = () => {
     projectDetails: false
   })
 
-  // Debounced search effects with loading state (use draftSearchTerm)
+  const VIEW_MODE_STORAGE_KEY = 'conpro-tracker-view-mode'
+
+  const handleSetViewMode = useCallback((mode) => {
+    if (mode !== 'map' && mode !== 'list') return
+    setViewMode(mode)
+    try {
+      localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode)
+    } catch {}
+  }, [])
+
+  // Restore preferred view mode (map is default when nothing saved)
   useEffect(() => {
-    // If cleared, immediately clear debounced
-    if (draftSearchTerm === '') {
-      setDebouncedSearchTerm('')
-      setIsSearching(false)
-      return
-    }
-    if (draftSearchTerm !== debouncedSearchTerm) setIsSearching(true)
-    const timer = setTimeout(() => {
-      setDebouncedSearchTerm(draftSearchTerm)
-      setIsSearching(false)
-    }, 500)
-    return () => clearTimeout(timer)
-  }, [draftSearchTerm, debouncedSearchTerm])
+    try {
+      const saved = localStorage.getItem(VIEW_MODE_STORAGE_KEY)
+      if (saved === 'map' || saved === 'list') {
+        setViewMode(saved)
+      }
+    } catch {}
+  }, [])
 
   // Location selection handlers
   const handleLocationSelect = useCallback((location) => {
@@ -192,6 +199,7 @@ const ProjectDashboardFixed = () => {
     try {
       const params = new URLSearchParams()
       // Use applied filters for count to avoid stale search terms
+      if (appliedProjectId) params.set('projectId', appliedProjectId)
       if (appliedSearchTerm) params.set('search', appliedSearchTerm)
       if (selectedLocation) {
         params.set('locationType', selectedLocation.type)
@@ -229,6 +237,7 @@ const ProjectDashboardFixed = () => {
   // Fetch projects data from API with pagination
   const buildQueryParams = () => {
     const params = new URLSearchParams()
+    if (appliedProjectId) params.set('projectId', appliedProjectId)
     if (appliedSearchTerm) params.set('search', appliedSearchTerm)
     if (selectedLocation) {
       params.set('locationType', selectedLocation.type)
@@ -256,6 +265,7 @@ const ProjectDashboardFixed = () => {
   const activeController = useRef(null)
   const isInitialMountRef = useRef(true)
   const prevDebouncedSearchRef = useRef('')
+  const prevProjectIdRef = useRef('')
 
   const fetchProjects = async (page = 1, reset = false) => {
     try {
@@ -355,6 +365,7 @@ const ProjectDashboardFixed = () => {
       const urlPM = get('projectManagerId') || 'all'
       const urlPC = get('projectCoordinatorId') || 'all'
       const urlSearch = get('search') || ''
+      const urlProjectId = get('projectId') || ''
       const urlLocType = get('locationType')
       const urlLocValue = get('locationValue')
       const urlStructureId = get('buildingTypeIdExact') || ''
@@ -377,6 +388,7 @@ const ProjectDashboardFixed = () => {
       setProjectCoordinatorFilter(urlPC); setDraftProjectCoordinatorFilter(urlPC)
 
       setAppliedSearchTerm(urlSearch); setDraftSearchTerm(urlSearch); setSearchTerm(urlSearch)
+      setAppliedProjectId(urlProjectId)
 
       if (urlLocType && urlLocValue) {
         const loc = { type: urlLocType, value: urlLocValue }
@@ -414,23 +426,14 @@ const ProjectDashboardFixed = () => {
     params.set('limit', String(itemsPerPage))
     const url = `${pathname}?${params.toString()}`
     router.replace(url)
-    
-    // Only refetch if it's a significant filter change, not just search
-    const isSignificantChange = selectedLocation || statusFilter !== 'all' || priorityFilter !== 'all' || 
-      clientFilter !== 'all' || contractorFilter !== 'all' || clerkOfWorkFilter !== 'all' ||
-      projectServiceFilter !== 'all' || buildingTypeFilter !== 'all' || projectTypeFilter !== 'all' ||
-      projectCategoryFilter !== 'all' || fundingAgencyFilter !== 'all' || projectManagerFilter !== 'all' ||
-      projectCoordinatorFilter !== 'all' || appliedStructureId || contractDateFilter || projectStartDateFilter || projectEndDateFilter
-    
-    if (isSignificantChange || appliedSearchTerm !== prevDebouncedSearchRef.current) {
-      fetchProjects(1, true)
-    }
-    
+
+    // Any change to applied filters / filtersBump should refetch (including Clear All)
+    fetchProjects(1, true)
     fetchTotalCount()
-    // Track previous applied search term for next run
     prevDebouncedSearchRef.current = appliedSearchTerm
+    prevProjectIdRef.current = appliedProjectId
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appliedSearchTerm, selectedLocation, statusFilter, priorityFilter, clientFilter, contractorFilter, clerkOfWorkFilter, projectServiceFilter, buildingTypeFilter, projectTypeFilter, projectCategoryFilter, fundingAgencyFilter, projectManagerFilter, projectCoordinatorFilter, appliedStructureId, contractDateFilter, projectStartDateFilter, projectEndDateFilter, filtersBump])
+  }, [appliedSearchTerm, appliedProjectId, selectedLocation, statusFilter, priorityFilter, clientFilter, contractorFilter, clerkOfWorkFilter, projectServiceFilter, buildingTypeFilter, projectTypeFilter, projectCategoryFilter, fundingAgencyFilter, projectManagerFilter, projectCoordinatorFilter, appliedStructureId, contractDateFilter, projectStartDateFilter, projectEndDateFilter, filtersBump])
 
   // Fetch content options for dropdowns
   useEffect(() => {
@@ -499,19 +502,6 @@ const ProjectDashboardFixed = () => {
       }
     }
     fetchContentOptions()
-  }, [])
-
-  // Auto-switch to list view on small devices
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth < 768) {
-        setViewMode('list')
-      }
-    }
-    
-    handleResize() // Check on mount
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
   }, [])
 
   // Removed legacy phase-based progress calculation; using cumulative_progress and planned_progress instead
@@ -651,17 +641,17 @@ const ProjectDashboardFixed = () => {
   // Remove client-side filtering since we're doing server-side filtering
   // The API already returns filtered results
 
-  const handleProjectClick = (project) => {
-    setExpandedProject(expandedProject === project.project_id ? null : project.project_id)
-  }
+  const handleProjectClick = useCallback((project) => {
+    setExpandedProject((prev) => (prev === project.project_id ? null : project.project_id))
+  }, [])
 
-  const handleViewProject = (project) => {
+  const handleViewProject = useCallback((project) => {
     router.push(`/projects/${project.project_slug}/preview`)
-  }
+  }, [router])
 
-  const handleEditProject = (project) => {
+  const handleEditProject = useCallback((project) => {
     router.push(`/projects/${project.project_slug}/overview`)
-  }
+  }, [router])
 
   // Track scroll progress of the project list container against its content
   // Scroll progress for list view (guard until refs are attached)
@@ -875,65 +865,23 @@ const ProjectDashboardFixed = () => {
     </div>
   )
 
-  // Memoized search handlers to prevent re-renders
+  // Dropdown select only fills the draft label — does NOT fetch main projects.
+  // Typing stays inside ProjectSearchDropdown (no parent setState per keystroke).
   const handleProjectSearchSelect = useCallback((selection) => {
-    // selection: { type: 'project' | 'institution', value: string, slug?: string }
-    const v = selection.value || ''
-    // Set draft & applied search immediately
-    setDraftSearchTerm(v)
-    setAppliedSearchTerm(v)
-    setSearchTerm(v)
-    // Reset other filters to avoid accidental exclusions
-    setDraftSelectedLocation(null)
-    setSelectedLocation(null)
-    setDraftStatusFilter('all'); setStatusFilter('all')
-    setDraftPriorityFilter('all'); setPriorityFilter('all')
-    setDraftClientFilter('all'); setClientFilter('all')
-    setDraftContractorFilter('all'); setContractorFilter('all')
-    setDraftClerkOfWorkFilter('all'); setClerkOfWorkFilter('all')
-    setDraftProjectServiceFilter('all'); setProjectServiceFilter('all')
-    setDraftBuildingTypeFilter('all'); setBuildingTypeFilter('all')
-    setDraftProjectTypeFilter('all'); setProjectTypeFilter('all')
-    setDraftProjectCategoryFilter('all'); setProjectCategoryFilter('all')
-    setDraftFundingAgencyFilter('all'); setFundingAgencyFilter('all')
-    setDraftProjectManagerFilter('all'); setProjectManagerFilter('all')
-    setDraftProjectCoordinatorFilter('all'); setProjectCoordinatorFilter('all')
-    setDraftStructureSearch(''); setDraftStructureId(''); setAppliedStructureId('')
-    setDraftContractDateFilter(''); setContractDateFilter('')
-    setDraftProjectStartDateFilter(''); setProjectStartDateFilter('')
-    setDraftProjectEndDateFilter(''); setProjectEndDateFilter('')
-    setCurrentPage(1)
-    // Trigger immediate refetch/update
-    setFiltersBump((b) => b + 1)
+    setDraftSearchTerm(selection.value || '')
   }, [])
 
   // Removed modal version of location filter
 
   // Draft/applied helpers
-  const hasDirtyFilters = (
-    draftSearchTerm !== appliedSearchTerm ||
-    JSON.stringify(draftSelectedLocation) !== JSON.stringify(selectedLocation) ||
-    draftStatusFilter !== statusFilter ||
-    draftPriorityFilter !== priorityFilter ||
-    draftClientFilter !== clientFilter ||
-    draftContractorFilter !== contractorFilter ||
-    draftClerkOfWorkFilter !== clerkOfWorkFilter ||
-    draftProjectServiceFilter !== projectServiceFilter ||
-    draftBuildingTypeFilter !== buildingTypeFilter ||
-    draftProjectTypeFilter !== projectTypeFilter ||
-    draftProjectCategoryFilter !== projectCategoryFilter ||
-    draftFundingAgencyFilter !== fundingAgencyFilter ||
-    draftProjectManagerFilter !== projectManagerFilter ||
-    draftProjectCoordinatorFilter !== projectCoordinatorFilter ||
-    draftStructureId !== appliedStructureId ||
-    draftContractDateFilter !== contractDateFilter ||
-    draftProjectStartDateFilter !== projectStartDateFilter ||
-    draftProjectEndDateFilter !== projectEndDateFilter
-  )
 
   const applyFilters = () => {
-    setAppliedSearchTerm(draftSearchTerm)
-    setSearchTerm(draftSearchTerm)
+    // Read live search text from the dropdown (typing never wrote to parent state)
+    const searchValue = projectSearchRef.current?.getValue?.() ?? draftSearchTerm
+    setDraftSearchTerm(searchValue)
+    setAppliedSearchTerm(searchValue)
+    setSearchTerm(searchValue)
+    setAppliedProjectId('')
     setSelectedLocation(draftSelectedLocation)
     setStatusFilter(draftStatusFilter)
     setPriorityFilter(draftPriorityFilter)
@@ -952,13 +900,12 @@ const ProjectDashboardFixed = () => {
     setProjectStartDateFilter(draftProjectStartDateFilter)
     setProjectEndDateFilter(draftProjectEndDateFilter)
     setCurrentPage(1)
-    // Force build of new URL and refetch now by toggling applied search
     setFiltersBump((b) => b + 1)
   }
 
   const resetDraftToDefaults = () => {
     setDraftSearchTerm('')
-    setDebouncedSearchTerm('')
+    projectSearchRef.current?.clear?.()
     setDraftSelectedLocation(null)
     setDraftStatusFilter('all')
     setDraftPriorityFilter('all')
@@ -982,6 +929,7 @@ const ProjectDashboardFixed = () => {
   const resetAppliedToDefaults = () => {
     setAppliedSearchTerm('')
     setSearchTerm('')
+    setAppliedProjectId('')
     setSelectedLocation(null)
     setStatusFilter('all')
     setPriorityFilter('all')
@@ -1003,8 +951,9 @@ const ProjectDashboardFixed = () => {
     setFiltersBump((b) => b + 1)
   }
 
-  // Reusable Filter Component
-  const FilterComponent = ({ className = "" }) => (
+  // Render filters as a plain element tree (NOT a nested component) so typing
+  // never remounts the panel / dropdown / map when parent state is unchanged.
+  const renderFilterPanel = (className = "") => (
     <div className={`bg-white shadow-lg dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 ${className}`}>
       <h6 className="!text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
         <FiFilter className="mr-2" />
@@ -1018,11 +967,15 @@ const ProjectDashboardFixed = () => {
             Search Projects
           </label>
           <ProjectSearchDropdown
-              value={draftSearchTerm}
+            ref={projectSearchRef}
+            value={appliedSearchTerm}
             onSelect={handleProjectSearchSelect}
+            canEdit={canEditProjects}
+            onPreview={handleViewProject}
+            onEdit={handleEditProject}
             placeholder="Search by project name or institution name..."
-            />
-          </div>
+          />
+        </div>
 
         {/* Location Search (inline, like other groups) */}
         <div>
@@ -1310,23 +1263,22 @@ const ProjectDashboardFixed = () => {
           )}
         </div>
 
-        {/* Clear All Filters Button */}
+        {/* Apply / Clear */}
         <button
           onClick={applyFilters}
-          disabled={!hasDirtyFilters}
-          className={`w-full px-4 py-2 mb-2 text-white text-sm font-medium rounded-lg transition-colors ${hasDirtyFilters ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-400 cursor-not-allowed'}`}
+          className="w-full px-4 py-2 mb-2 text-white text-sm font-medium rounded-lg transition-colors bg-blue-600 hover:bg-blue-700"
         >
           Apply Filters
         </button>
         <button
+          type="button"
           onClick={() => {
-            // Reset draft and applied, trigger initial fetch
+            // One-shot clear: reset draft + applied, then let the filters effect refetch.
+            // Do NOT call fetchProjects here — it would close over stale search params.
             resetDraftToDefaults()
             resetAppliedToDefaults()
-            setTimeout(() => {
-              fetchProjects(1, true)
-              fetchTotalCount()
-            }, 50)
+            prevDebouncedSearchRef.current = '__pending_clear__'
+            prevProjectIdRef.current = '__pending_clear__'
           }}
           className="w-full px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors"
         >
@@ -1360,10 +1312,10 @@ const ProjectDashboardFixed = () => {
               <div className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-3 py-1 rounded-full text-sm font-medium">
                 {totalProjectsCount} Total Projects
               </div>
-              {isSearching && (
+              {filtering && (
                 <div className="flex items-center space-x-2 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 px-3 py-1 rounded-full text-sm font-medium">
                   <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-yellow-600"></div>
-                  <span>Searching...</span>
+                  <span>Filtering...</span>
                 </div>
               )}
             </div>
@@ -1378,13 +1330,13 @@ const ProjectDashboardFixed = () => {
             </button>
             <div className="hidden md:flex items-center space-x-2">
               <button
-                onClick={() => setViewMode('map')}
+                onClick={() => handleSetViewMode('map')}
                 className={`flex items-center space-x-2 px-3 py-2 ${viewMode === 'map' ? 'bg-blue-600' : 'bg-gray-600'} text-white text-sm rounded-lg hover:bg-blue-700 transition-colors`}
               >
                 <FiMap className="w-4 h-4" />
               </button>
               <button
-                onClick={() => setViewMode('list')}
+                onClick={() => handleSetViewMode('list')}
                 className={`flex items-center space-x-2 px-3 py-2 ${viewMode === 'list' ? 'bg-blue-600' : 'bg-gray-600'} text-white text-sm rounded-lg hover:bg-blue-700 transition-colors`}
               >
                 <FiList className="w-4 h-4" />
@@ -1399,7 +1351,7 @@ const ProjectDashboardFixed = () => {
         {viewMode === 'map' && showMap && (
           <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
             <div className="h-screen relative">
-              {(isSearching || filtering) ? (
+              {filtering ? (
                 <div className="absolute inset-0 flex items-center justify-center bg-gray-50 dark:bg-gray-800">
                   <div className="text-center">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
@@ -1407,8 +1359,8 @@ const ProjectDashboardFixed = () => {
                   </div>
                 </div>
               ) : (
-              <ProjectMap
-                  projects={isSearching || filtering ? [] : displayedProjects}
+              <MemoProjectMap
+                  projects={displayedProjects}
                 height="100%"
                 showPopup={true}
                 onMarkerClick={handleProjectClick}
@@ -1418,397 +1370,275 @@ const ProjectDashboardFixed = () => {
           </div>
         )}
 
-        {/* List View Section */}
+        {/* List View — simple mobile-style cards on all screen sizes */}
         {viewMode === 'list' && (
           <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-            <div className="flex relative">
-              {/* Projects Grid */}
-              <div ref={listRef} className="flex-1 p-6 max-h-[80vh] overflow-y-auto project-list-container">
-                <div ref={contentRef} className="flex flex-wrap gap-4">
-                  {(filtering || isSearching) && displayedProjects.length === 0 ? (
-                    // Skeleton loading for search/filter
-                    Array.from({ length: 6 }).map((_, index) => (
-                      <ProjectSkeleton key={index} />
-                    ))
+            <div className="flex relative h-[calc(100vh-4.5rem)]">
+              <div ref={listRef} className="flex-1 min-w-0 overflow-y-auto project-list-container p-4 md:p-5">
+                <div ref={contentRef}>
+                  {(filtering || loading) ? (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                      {Array.from({ length: 6 }).map((_, index) => (
+                        <div
+                          key={index}
+                          className="rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/40 p-4 animate-pulse space-y-3"
+                        >
+                          <div className="flex justify-between gap-3">
+                            <div className="flex-1 space-y-2">
+                              <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded w-4/5" />
+                              <div className="h-3 bg-gray-100 dark:bg-gray-700 rounded w-1/2" />
+                            </div>
+                            <div className="flex gap-1">
+                              <div className="h-7 w-7 bg-gray-200 dark:bg-gray-600 rounded" />
+                              <div className="h-7 w-7 bg-gray-200 dark:bg-gray-600 rounded" />
+                            </div>
+                          </div>
+                          <div className="h-5 bg-gray-200 dark:bg-gray-600 rounded-full w-20" />
+                          <div className="h-1.5 bg-gray-200 dark:bg-gray-600 rounded w-full" />
+                          <div className="h-3 bg-gray-100 dark:bg-gray-700 rounded w-2/3" />
+                        </div>
+                      ))}
+                    </div>
+                  ) : displayedProjects.length === 0 ? (
+                    <div className="text-center py-16 px-4">
+                      <FiSearch className="mx-auto h-10 w-10 text-gray-400 mb-3" />
+                      <h3 className="text-base font-medium text-gray-900 dark:text-white mb-1">
+                        No projects found
+                      </h3>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        Try adjusting your search criteria or filters
+                      </p>
+                    </div>
                   ) : (
-                    displayedProjects.map((project, index) => {
-                    const { planned, cumulative } = getProgress(project)
-                    const progressActual = cumulative
-                    const progressPlanned = planned
-                    const duration = displayDuration(project)
-                    const remainingDays = calculateRemainingDays(project)
-                    const isExpanded = expandedProject === project.project_id
-                    
-                    return (
-                      <div
-                        key={`${project.project_id}-${index}`}
-                        className={`bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 p-4 hover:shadow-lg transition-all duration-300 cursor-pointer w-full md:w-[calc(50%-0.5rem)] lg:w-[calc(33.333%-0.5rem)] ${
-                          isExpanded ? 'shadow-xl border-blue-300 dark:border-blue-600' : ''
-                        }`}
-                        onClick={() => handleProjectClick(project)}
-                      >
-                        {/* Basic Project Info */}
-                        <div className="mb-3">
-                          <h5 
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleViewProject(project)
-                            }}
-                            className="font-semibold text-gray-900 dark:text-white !text-sm mb-2 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                      {displayedProjects.map((project, index) => {
+                        const { planned, cumulative } = getProgress(project)
+                        const progressActual = Math.round(cumulative)
+                        const progressPlanned = Math.round(planned)
+                        const duration = displayDuration(project)
+                        const remainingDays = calculateRemainingDays(project)
+                        const isExpanded = expandedProject === project.project_id
+                        const clientName = getNamesFromStakeholders(project.project_clients, 'clientName')[0]
+                        const managerName = getNamesFromStakeholders(project.project_managers, 'managerName')[0]
+                        const typeName = getNamesFromStakeholders(project.building_types, 'buildingType')[0]
+                        const serviceName = getNamesFromStakeholders(project.project_services, 'serviceName')[0]
+                        const locationLabel = [project.project_location?.mmda, project.project_location?.region]
+                          .filter(Boolean)
+                          .join(', ') || '—'
+
+                        return (
+                          <div
+                            key={`${project.project_id}-${index}`}
+                            className={`rounded-xl border bg-gray-50 dark:bg-gray-700/40 p-4 transition-all cursor-pointer ${
+                              isExpanded
+                                ? 'border-blue-300 dark:border-blue-500 bg-white dark:bg-gray-700 shadow-md'
+                                : 'border-gray-200 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-500 hover:bg-white dark:hover:bg-gray-700'
+                            }`}
+                            onClick={() => handleProjectClick(project)}
                           >
-                            {project.project_name}
-                          </h5>
-                          <div className="flex items-center space-x-2 !text-sm text-gray-600 dark:text-gray-400 mb-2">
-                            <FiMapPin className="text-gray-400" />
-                            <span>{project.project_location?.mmda}, {project.project_location?.region}</span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className={`px-2 py-1 !text-sm font-medium rounded-full ${getStatusColor(project.project_status)}`}>
-                              {project.project_status}
-                            </span>
-                            <div className="flex items-center space-x-1">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleViewProject(project)
-                                }}
-                                className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 p-1"
-                                title="Preview Project"
-                              >
-                                <FiEye className="text-sm" />
-                              </button>
-                              {canEditProjects && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleEditProject(project)
-                                  }}
-                                  className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 p-1"
-                                  title="Edit Project"
-                                >
-                                  <FiEdit className="text-sm" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Progress - Actual vs Planned */}
-                        <div className="mb-3">
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="!text-sm text-gray-600 dark:text-gray-400">Cumulative Progress</span>
-                            <span className="!text-sm font-medium text-gray-900 dark:text-white">
-                              {Math.round(progressActual)}%
-                            </span>
-                          </div>
-                          <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2 mb-2">
-                            <div
-                              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                              style={{ width: `${progressActual}%` }}
-                            ></div>
-                          </div>
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="!text-sm text-gray-600 dark:text-gray-400">Planned Progress</span>
-                            <span className="!text-sm font-medium text-gray-900 dark:text-white">
-                              {Math.round(progressPlanned)}%
-                            </span>
-                          </div>
-                          <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
-                            <div
-                              className="bg-purple-600 h-2 rounded-full transition-all duration-300"
-                              style={{ width: `${progressPlanned}%` }}
-                            ></div>
-                          </div>
-                        </div>
-
-                        {/* Project Image */}
-                        {project.project_cover_image?.url && (
-                          <div className="mb-3">
-                            <img
-                              src={project.project_cover_image.url}
-                              alt={project.project_name}
-                              className="w-full h-32 object-cover rounded-lg"
-                            />
-                          </div>
-                        )}
-
-                        {/* Basic Project Details */}
-                        <div className="space-y-2 mb-3">
-                          <div className="flex items-center !text-sm">
-                            <FiUser className="text-gray-400 mr-1 w-3 h-3" />
-                            <div>
-                              <p className="text-gray-500 dark:text-gray-400 !text-sm">Client</p>
-                              <p className="font-medium text-gray-900 dark:text-white truncate !text-sm">
-                                {getNamesFromStakeholders(project.project_clients, 'clientName')[0] || 'Unknown'}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center !text-sm">
-                            <FiDollarSign className="text-gray-400 mr-1 w-3 h-3" />
-                            <div>
-                              <p className="text-gray-500 dark:text-gray-400 !text-sm">Service</p>
-                              <p className="font-medium text-gray-900 dark:text-white truncate !text-sm">
-                                {getNamesFromStakeholders(project.project_services, 'serviceName')[0] || 'Unknown'}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center !text-sm">
-                            <FiUser className="text-gray-400 mr-1 w-3 h-3" />
-                            <div>
-                              <p className="text-gray-500 dark:text-gray-400 !text-sm">Manager</p>
-                              <p className="font-medium text-gray-900 dark:text-white truncate !text-sm">
-                                {getNamesFromStakeholders(project.project_managers, 'managerName')[0] || 'Unknown'}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center !text-sm">
-                            <FiDollarSign className="text-gray-400 mr-1 w-3 h-3" />
-                            <div>
-                              <p className="text-gray-500 dark:text-gray-400 !text-sm">Type</p>
-                              <p className="font-medium text-gray-900 dark:text-white truncate !text-sm">
-                                {getNamesFromStakeholders(project.building_types, 'buildingType')[0] || 'Unknown'}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Expanded Details */}
-                        {isExpanded && (
-                          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600 space-y-3">
-                            {/* Project Description */}
-                            {project.project_description && (
-                              <div>
-                                <h6 className="!text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</h6>
-                                <p className="!text-sm text-gray-600 dark:text-gray-400 line-clamp-3">
-                                  {project.project_description}
+                            <div className="flex items-start justify-between gap-3 mb-2">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-semibold text-gray-900 dark:text-white line-clamp-2 leading-snug">
+                                  {project.project_name}
                                 </p>
+                                <div className="flex items-center space-x-2 text-xs text-gray-600 dark:text-gray-400 mt-1.5 mb-0">
+                                  <FiMapPin className="text-gray-400" />
+                                  <span className="truncate">{locationLabel}</span>
+                                </div>
+                              </div>
+                              <div
+                                className="flex items-center gap-0.5 shrink-0"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => handleViewProject(project)}
+                                  className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-gray-600 rounded-lg"
+                                  title="Preview"
+                                >
+                                  <FiEye className="w-4 h-4" />
+                                </button>
+                                {canEditProjects && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEditProject(project)}
+                                    className="p-1.5 text-green-600 hover:bg-green-50 dark:hover:bg-gray-600 rounded-lg"
+                                    title="Edit"
+                                  >
+                                    <FiEdit className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-3 mb-3">
+                              <span className={`inline-flex px-2.5 py-0.5 text-xs font-medium rounded-full capitalize ${getStatusColor(project.project_status)}`}>
+                                {project.project_status || '—'}
+                              </span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">
+                                {progressActual}% · {progressPlanned}% planned
+                              </span>
+                            </div>
+
+                            <div className="relative h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden mb-3">
+                              <div
+                                className="absolute inset-y-0 left-0 bg-purple-400/60 rounded-full"
+                                style={{ width: `${Math.min(progressPlanned, 100)}%` }}
+                              />
+                              <div
+                                className="absolute inset-y-0 left-0 bg-blue-600 rounded-full"
+                                style={{ width: `${Math.min(progressActual, 100)}%` }}
+                              />
+                            </div>
+
+                            {!isExpanded && (
+                              <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+                                {clientName && <span className="truncate max-w-[45%]">{clientName}</span>}
+                                {managerName && <span className="truncate max-w-[45%]">{managerName}</span>}
+                                {typeName && <span className="truncate max-w-full">{typeName}</span>}
                               </div>
                             )}
 
-                            {/* Detailed Information Grid */}
-                            <div className="grid grid-cols-2 gap-3 !text-sm">
-                              <div>
-                                <p className="text-gray-500 dark:text-gray-400 mb-1 !text-sm">Priority</p>
-                                <p className="font-medium text-gray-900 dark:text-white capitalize !text-sm">
-                                  {project.project_priority}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-gray-500 dark:text-gray-400 mb-1 !text-sm">Duration</p>
-                                <p className="font-medium text-gray-900 dark:text-white !text-sm">
-                                  {duration}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-gray-500 dark:text-gray-400 mb-1 !text-sm">Start Date</p>
-                                <p className="font-medium text-gray-900 dark:text-white !text-sm">
-                                  {project.project_start_date ? new Date(project.project_start_date).toLocaleDateString() : 'TBD'}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-gray-500 dark:text-gray-400 mb-1 !text-sm">Contract Date</p>
-                                <p className="font-medium text-gray-900 dark:text-white !text-sm">
-                                  {project.contract_date ? new Date(project.contract_date).toLocaleDateString() : 'TBD'}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-gray-500 dark:text-gray-400 mb-1 !text-sm">Site Possession</p>
-                                <p className="font-medium text-gray-900 dark:text-white !text-sm">
-                                  {project.site_possession_date ? new Date(project.site_possession_date).toLocaleDateString() : 'TBD'}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-gray-500 dark:text-gray-400 mb-1 !text-sm">Planned Progress</p>
-                                <p className="font-medium text-gray-900 dark:text-white !text-sm">
-                                  {progressPlanned !== null ? `${progressPlanned}%` : 'N/A'}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-gray-500 dark:text-gray-400 mb-1 !text-sm">Cumulative Progress</p>
-                                <p className="font-medium text-gray-900 dark:text-white !text-sm">
-                                  {progressActual}%
-                                </p>
-                              </div>
-                            </div>
+                            {isExpanded && (
+                              <div className="mt-1 pt-3 border-t border-gray-200 dark:border-gray-600 space-y-3">
+                                {project.project_description && (
+                                  <div>
+                                    <p className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Description</p>
+                                    <p className="text-xs text-gray-600 dark:text-gray-400 line-clamp-3">
+                                      {project.project_description}
+                                    </p>
+                                  </div>
+                                )}
 
-                            {/* Additional Stakeholders */}
-                            <div className="space-y-2">
-                              <h6 className="!text-sm font-medium text-gray-700 dark:text-gray-300">Stakeholders</h6>
-                              <div className="flex flex-wrap gap-4">
-                                {project.contractors && project.contractors.length > 0 && (
-                                  <div className="min-w-[220px] flex-1">
-                                    <p className="!text-sm text-gray-500 dark:text-gray-400 mb-1">Contractors</p>
-                                    <div className="flex flex-wrap gap-1">
-                                      {getNamesFromStakeholders(project.contractors, 'fullName').map((contractor, index) => (
-                                        <span key={index} className="px-2 py-1 bg-[#29166F] text-white !text-xs rounded-full">
-                                          {contractor}
-                                        </span>
-                                      ))}
-                                    </div>
+                                <div className="space-y-2 text-xs">
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-gray-500 dark:text-gray-400">Client</span>
+                                    <span className="font-medium text-gray-900 dark:text-white text-right">{clientName || 'Unknown'}</span>
                                   </div>
-                                )}
-                                {project.clerk_of_works && project.clerk_of_works.length > 0 && (
-                                  <div className="min-w-[220px] flex-1">
-                                    <p className="!text-sm text-gray-500 dark:text-gray-400 mb-1">Clerk of Works</p>
-                                    <div className="flex flex-wrap gap-1">
-                                      {getNamesFromStakeholders(project.clerk_of_works, 'fullName').map((clerk, index) => (
-                                        <span key={index} className="px-2 py-1 bg-[#29166F] text-white !text-xs rounded-full">
-                                          {clerk}
-                                        </span>
-                                      ))}
-                                    </div>
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-gray-500 dark:text-gray-400">Service</span>
+                                    <span className="font-medium text-gray-900 dark:text-white text-right">{serviceName || 'Unknown'}</span>
                                   </div>
-                                )}
-                                {project.project_coordinators && project.project_coordinators.length > 0 && (
-                                  <div className="min-w-[220px] flex-1">
-                                    <p className="!text-sm text-gray-500 dark:text-gray-400 mb-1">Coordinators</p>
-                                    <div className="flex flex-wrap gap-1">
-                                      {getNamesFromStakeholders(project.project_coordinators, 'fullName').map((coordinator, index) => (
-                                        <span key={index} className="px-2 py-1 bg-[#29166F] text-white !text-xs rounded-full">
-                                          {coordinator}
-                                        </span>
-                                      ))}
-                                    </div>
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-gray-500 dark:text-gray-400">Manager</span>
+                                    <span className="font-medium text-gray-900 dark:text-white text-right">{managerName || 'Unknown'}</span>
                                   </div>
-                                )}
-                              </div>
-                            </div>
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-gray-500 dark:text-gray-400">Type</span>
+                                    <span className="font-medium text-gray-900 dark:text-white text-right">{typeName || 'Unknown'}</span>
+                                  </div>
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-gray-500 dark:text-gray-400">Priority</span>
+                                    <span className="font-medium text-gray-900 dark:text-white capitalize text-right">
+                                      {project.project_priority || '—'}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-gray-500 dark:text-gray-400">Duration</span>
+                                    <span className="font-medium text-gray-900 dark:text-white text-right">{duration}</span>
+                                  </div>
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-gray-500 dark:text-gray-400">Days until contract</span>
+                                    <span className={`font-medium text-right ${
+                                      remainingDays === 'Overdue' ? 'text-red-600' :
+                                      remainingDays === 'Due today' ? 'text-yellow-600' :
+                                      'text-gray-900 dark:text-white'
+                                    }`}>
+                                      {remainingDays}
+                                    </span>
+                                  </div>
+                                </div>
 
-                            {/* Action Buttons */}
-                            <div className="pt-3 border-t border-gray-200 dark:border-gray-600 flex gap-2">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleViewProject(project)
-                                }}
-                                className="flex-1 px-3 py-2 bg-blue-600 text-white !text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-                              >
-                                View Preview
-                              </button>
-                              {canEditProjects && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleEditProject(project)
-                                  }}
-                                  className="flex-1 px-3 py-2 bg-green-600 text-white !text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
-                                >
-                                  Edit Project
-                                </button>
-                              )}
-                            </div>
+                                <div className="pt-2 flex gap-2" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleViewProject(project)}
+                                    className="flex-1 px-3 py-2 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                                  >
+                                    View Preview
+                                  </button>
+                                  {canEditProjects && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleEditProject(project)}
+                                      className="flex-1 px-3 py-2 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors"
+                                    >
+                                      Edit Project
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        )}
-
-                      {/* Remaining Days */}
-                        {/* <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
-                          <div className="flex justify-between items-center">
-                          <span className="!text-sm text-gray-500 dark:text-gray-400">Days Until Contract Date</span>
-                            <span className={`!text-sm font-medium ${
-                              remainingDays === 'Overdue' ? 'text-red-600' :
-                              remainingDays === 'Due today' ? 'text-yellow-600' :
-                              'text-gray-900 dark:text-white'
-                            }`}>
-                              {remainingDays}
-                            </span>
-                          </div>
-                        </div> */}
-                      </div>
-                    )
-                  })
+                        )
+                      })}
+                    </div>
                   )}
                 </div>
-                
-                {/* Loading More Indicator */}
+
                 {loadingMore && (
-                  <div className="w-full flex justify-center py-8">
-                    <div className="flex items-center space-x-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg px-6 py-4 shadow-lg animate-pulse">
-                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Loading more projects...</span>
+                  <div className="flex justify-center py-6">
+                    <div className="flex items-center space-x-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg px-5 py-3 shadow-sm">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500" />
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Loading more…</span>
                     </div>
                   </div>
                 )}
 
-                {/* End Of Results */}
                 {!loadingMore && !hasMore && displayedProjects.length > 0 && (
-                  <div className="w-full flex justify-center py-8">
-                    <div className="flex items-center space-x-2 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-6 py-4">
-                      <div className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full"></div>
-                      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">End Of Results</span>
-                      <div className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full"></div>
-                    </div>
+                  <div className="flex justify-center py-6">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">End of results</span>
                   </div>
                 )}
 
-                {/* Load More Button (fallback) */}
-                {!loadingMore && hasMore && displayedProjects.length > 0 && (
-                  <div className="text-center py-8">
+                {!loadingMore && hasMore && displayedProjects.length > 0 && !(filtering || loading) && (
+                  <div className="text-center py-6">
                     <button
+                      type="button"
                       onClick={loadMoreProjects}
-                      className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      className="px-5 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
                     >
                       Load More Projects
                     </button>
                   </div>
                 )}
+              </div>
 
-                {/* No More Projects - Removed, using "End Of Results" above */}
-                
-                {displayedProjects.length === 0 && !loading && (
-                  <div className="text-center py-12">
-                    <FiSearch className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                      No projects found
-                    </h3>
+              {/* Right Sidebar for List View */}
+              <div className="hidden md:flex w-80 shrink-0 bg-gray-50 dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 flex-col overflow-y-auto">
+                <button
+                  type="button"
+                  onClick={() => setShowFilters(!showFilters)}
+                  className="w-10 h-10 m-4 space-x-2 px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
+                >
+                  <span>{showFilters ? <MdCancel className="w-4 h-4" /> : <FiFilter className="w-4 h-4" />}</span>
+                </button>
+
+                {showFilters ? (
+                  <div className="px-4 pb-4">{renderFilterPanel('mb-0')}</div>
+                ) : (
+                  <div className="px-6 pb-6">
+                    <h6 className="text-base font-semibold text-gray-900 dark:text-white mb-2">Filters</h6>
                     <p className="text-sm text-gray-600 dark:text-gray-400">
-                      Try adjusting your search criteria or filters
+                      Open filters to search and narrow down projects.
                     </p>
                   </div>
                 )}
               </div>
-              
-              {/* Right Sidebar for List View - Hidden on small devices */}
-              <div className="hidden md:block w-80 bg-gray-50 dark:bg-gray-900 flex flex-col">
-                {/* Filter Toggle Button */}
-                <button
-                  onClick={() => setShowFilters(!showFilters)}
-                  className="w-10 h-10 m-4 space-x-2 px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
-                >
-                  <span>{showFilters ? <MdCancel className="w-4 h-4" />:<FiFilter className="w-4 h-4" />}</span>
-                </button>
 
-                {showFilters && (
-                  <FilterComponent className="mb-6" />
-                )}
-
-                {/* Filters Only */}
-                <div className="p-6">
-                  <h6 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                    Filters
-                  </h6>
-                  <p className="!text-sm text-gray-600 dark:text-gray-400 mb-6">
-                    Use the filters below to narrow down your project search
-                  </p>
-                </div>
-              </div>
-
-              {/* Mobile Filters - Absolutely positioned only on small devices */}
+              {/* Mobile Filters */}
               <div className="md:hidden absolute top-0 right-0 w-full h-full pointer-events-none">
-                {/* Filter Toggle Button - Positioned within projects container */}
                 <button
+                  type="button"
                   onClick={() => setShowFilters(!showFilters)}
                   className="absolute top-4 right-4 z-50 w-12 h-12 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors shadow-lg pointer-events-auto flex items-center justify-center"
                 >
-                  <span>{showFilters ? <MdCancel className="w-5 h-5" />:<FiFilter className="w-5 h-5" />}</span>
+                  <span>{showFilters ? <MdCancel className="w-5 h-5" /> : <FiFilter className="w-5 h-5" />}</span>
                 </button>
 
-                {/* Filters - Absolutely Positioned Over Projects - Only on mobile */}
                 {showFilters && (
-                  <div className="absolute top-0 right-0 z-40 w-4/5 max-h-[80vh] overflow-y-auto bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 shadow-lg pointer-events-auto">
-                    <FilterComponent className="mb-0" />
+                  <div className="absolute top-0 right-0 z-40 w-4/5 max-h-full overflow-y-auto bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 shadow-lg pointer-events-auto">
+                    {renderFilterPanel('mb-0')}
                   </div>
                 )}
               </div>
@@ -1825,9 +1655,9 @@ const ProjectDashboardFixed = () => {
               </h6>
               
               <div className="space-y-4">
-                {(filtering || isSearching) && displayedProjects.length === 0 ? (
-                  // Skeleton loading for map sidebar
-                  Array.from({ length: 4 }).map((_, index) => (
+                {(filtering || loading) ? (
+                  // Skeleton loading while fetching projects (left project list)
+                  Array.from({ length: 5 }).map((_, index) => (
                     <MapSidebarSkeleton key={index} />
                   ))
                 ) : (
@@ -2033,9 +1863,7 @@ const ProjectDashboardFixed = () => {
                 <span>{showFilters ? <MdCancel className="w-4 h-4" />:<FiFilter className="w-4 h-4" />}</span>
               </button>
 
-              {showFilters && (
-                <FilterComponent className="mb-6" />
-              )}
+              {showFilters && renderFilterPanel("mb-6")}
 
               {/* Filters Only */}
               <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg p-4">

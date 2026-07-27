@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { resolveMultipleProjectEntities } from '../../lib/resolveEntities'
+import {
+  buildMultiFieldIlikeOr,
+  PROJECT_SEARCH_FIELDS,
+  quotePostgrestValue,
+} from '../../lib/postgrestSearch'
 
 // Initialize Supabase client with service role key for full access
 const supabase = createClient(
@@ -106,6 +111,8 @@ export async function GET(request) {
     const locationType = searchParams.get('locationType') || ''
     const locationValue = searchParams.get('locationValue') || ''
     const search = searchParams.get('search') || ''
+    const projectId = searchParams.get('projectId') || ''
+    const projectSlug = searchParams.get('projectSlug') || ''
     const buildingTypeSearch = searchParams.get('buildingTypeSearch') || ''
     const contractDate = searchParams.get('contractDate') || ''
     const projectStartDate = searchParams.get('projectStartDate') || ''
@@ -160,17 +167,19 @@ export async function GET(request) {
     if (locationType && locationValue) {
       query = query.eq(`project_location->>${locationType}`, locationValue)
     }
-    if (search) {
-      // Partial match across multiple fields (aligned with count endpoint)
-      const pattern = `%${search}%`
-      query = query.or(
-        `project_name.ilike.${pattern},project_description.ilike.${pattern},institution_name.ilike.${pattern},project_location->>mmda.ilike.${pattern},project_location->>region.ilike.${pattern},project_location->>country.ilike.${pattern},project_location->>address.ilike.${pattern},project_location->>city_town.ilike.${pattern}`
-      )
+    // Exact project pin takes precedence over free-text search
+    if (projectId) {
+      query = query.eq('project_id', projectId)
+    } else if (projectSlug) {
+      query = query.eq('project_slug', projectSlug)
+    } else if (search) {
+      // Quoted ilike so commas/parentheses in names do not break PostgREST .or() parsing
+      query = query.or(buildMultiFieldIlikeOr(PROJECT_SEARCH_FIELDS, search))
     }
 
     // Structure free-text search (building types by name/category/code)
     if (buildingTypeSearch) {
-      const btPattern = `%${buildingTypeSearch}%`
+      const btPattern = quotePostgrestValue(`%${buildingTypeSearch}%`)
       const { data: btRows, error: btErr } = await supabase
         .from('building_types')
         .select('id')
@@ -211,10 +220,9 @@ export async function GET(request) {
       }, { status: 500 })
     }
 
-    // Fallback: if search is present and no results, try exact match on project_name
-    // This avoids edge cases where special characters (e.g., parentheses) might confuse the OR parser
+    // Fallback: if free-text search returned nothing, try exact project_name match
     const anyOtherFilters = Boolean(status || priority || clientId || contractorId || cowId || serviceId || buildingTypeId || buildingTypeIdExact || projectTypeId || projectCategoryId || fundingAgencyId || projectManagerId || projectCoordinatorId || locationType || locationValue || buildingTypeSearch || contractDate || projectStartDate || projectEndDate)
-    if (search && (!projects || projects.length === 0) && !anyOtherFilters) {
+    if (search && !projectId && !projectSlug && (!projects || projects.length === 0) && !anyOtherFilters) {
       const { data: exactProjects, error: exactErr } = await supabase
         .from('projects')
         .select('*')
