@@ -8,8 +8,56 @@ import EnhancedLocationSelector from '../../../components/EnhancedLocationSelect
 import LinkedProjectsSelector from '../../../components/LinkedProjectsSelector'
 import EnhancedStructuresSelector from '../../../components/EnhancedStructuresSelector'
 import { useAuth } from '../../../contexts/AuthContext'
+import {
+  getClientErrorMessage,
+} from '../../../lib/apiError'
 // import { supabase } from '../../../lib/supabaseClient' // Not needed for file upload
 // Remove dummy data import - we'll fetch real data from APIs
+
+const EMPTY_FORM_DATA = {
+  projectId: '',
+  institutionName: '',
+  projectName: '',
+  coverImage: null,
+  location: {
+    country: 'Ghana',
+    region: '',
+    mmda: '',
+    city_town: '',
+    city: '',
+    town: '',
+    gpsCoordinates: { lat: '', lng: '' },
+    address: '',
+    additional_info: ''
+  },
+  clients: [],
+  fundingAgencies: [],
+  projectStartDate: '',
+  projectCompletionDate: '',
+  slug: '',
+  projectContractor: [],
+  buildingTypes: [],
+  projectTypes: [],
+  projectServices: [],
+  projectDescription: '',
+  projectStatus: 'planning',
+  projectPriority: 'medium',
+  projectDetails: '',
+  projectCOW: [],
+  projectManagers: [],
+  projectCoordinators: [],
+  handingOverDate: '',
+  contractDate: '',
+  revisedDate: '',
+  plannedProgress: '',
+  cumulativeProgress: '',
+  sitePossessionDate: '',
+  duration: '',
+  specialComments: '',
+  linkedProjects: [],
+  projectStage: '',
+  projectCategories: [],
+}
 
 const ProjectOverviewPage = () => {
   const params = useParams()
@@ -18,54 +66,13 @@ const ProjectOverviewPage = () => {
   const isNewProject = slug === 'addNewProject'
   const fileInputRef = useRef(null)
   const permissionCheckedRef = useRef(false)
+  const lastSlugRef = useRef(slug)
   const { user, loading: authLoading } = useAuth()
   
   // Check if user can edit projects (admin or projectManager)
   const canEditProjects = user?.userRole === 'admin' || user?.userRole === 'projectManager'
   
-  const [formData, setFormData] = useState({
-    projectId: '',
-    institutionName: '',
-    projectName: '',
-    coverImage: null,
-    location: {
-      country: 'Ghana', // Set default country to Ghana
-      region: '',
-      mmda: '',
-      city_town: '',
-      city: '', // For form compatibility with EnhancedLocationSelector
-      town: '', // For form compatibility with EnhancedLocationSelector
-      gpsCoordinates: { lat: '', lng: '' },
-      address: '',
-      additional_info: ''
-    },
-    clients: [],
-    fundingAgencies: [],
-    projectStartDate: '',
-    projectCompletionDate: '',
-    slug: '',
-    projectContractor: [],
-    buildingTypes: [],
-    projectTypes: [],
-    projectServices: [],
-    projectDescription: '',
-    projectStatus: 'planning',
-    projectPriority: 'medium',
-    projectDetails: '',
-    projectCOW: [],
-    projectManagers: [], // Added project managers
-    projectCoordinators: [], // Added project coordinators
-    handingOverDate: '',
-    contractDate: '',
-    revisedDate: '',
-    plannedProgress: '',
-    cumulativeProgress: '',
-    sitePossessionDate: '',
-    duration: '',
-    specialComments: '',
-    linkedProjects: [], // Added linkedProjects state
-    projectStage: '' // Added project_stage field
-  })
+  const [formData, setFormData] = useState(() => ({ ...EMPTY_FORM_DATA, location: { ...EMPTY_FORM_DATA.location, gpsCoordinates: { lat: '', lng: '' } } }))
 
 
   const [loading, setLoading] = useState(!isNewProject)
@@ -94,7 +101,22 @@ const ProjectOverviewPage = () => {
       return
     }
 
-    // Prevent multiple permission checks
+    // When navigating between project slugs (e.g. delete → addNewProject), reset gates/form
+    if (lastSlugRef.current !== slug) {
+      lastSlugRef.current = slug
+      permissionCheckedRef.current = false
+      if (isNewProject) {
+        setFormData({
+          ...EMPTY_FORM_DATA,
+          location: { ...EMPTY_FORM_DATA.location, gpsCoordinates: { lat: '', lng: '' } },
+        })
+        setGpsUserEdited(false)
+        setLoading(false)
+        if (fileInputRef.current) fileInputRef.current.value = ''
+      }
+    }
+
+    // Prevent multiple permission checks for the same slug
     if (permissionCheckedRef.current) {
       return
     }
@@ -195,6 +217,10 @@ const ProjectOverviewPage = () => {
       
     } catch (error) {
       console.error('❌ Error fetching content data:', error)
+      toast.error(getClientErrorMessage(error, 'load dropdown options (clients, contractors, etc.)'), {
+        position: 'top-right',
+        autoClose: 8000,
+      })
     } finally {
       setContentLoading(false)
     }
@@ -204,14 +230,17 @@ const ProjectOverviewPage = () => {
     try {
       setLoading(true)
       const response = await fetch(`/api/projects/slug/${slug}`)
-      const data = await response.json()
+      const data = await response.json().catch(() => null)
       
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to fetch project')
+        const message = data
+          ? [data.error, data.details].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(' — ')
+          : `Could not load the project (HTTP ${response.status})`
+        throw new Error(message || 'Failed to fetch project')
       }
       
-      if (!data.success) {
-        throw new Error(data.error || 'Project not found')
+      if (!data?.success) {
+        throw new Error(data?.error || data?.details || 'Project not found')
       }
       
       const project = data.project
@@ -267,7 +296,10 @@ const ProjectOverviewPage = () => {
       setGpsUserEdited(false)
     } catch (error) {
       console.error('❌ Error fetching project:', error)
-      toast.error(`Error loading project: ${error.message}`)
+      toast.error(getClientErrorMessage(error, 'load the project'), {
+        position: 'top-right',
+        autoClose: 8000,
+      })
     } finally {
       setLoading(false)
     }
@@ -525,23 +557,33 @@ const ProjectOverviewPage = () => {
         })
       }
       
-      const result = await response.json()
+      const result = await response.json().catch(() => null)
       
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to save project')
+        const message = result
+          ? [result.error, result.details]
+              .filter((v) => typeof v === 'string' && v.trim())
+              .filter((v, i, a) => a.indexOf(v) === i)
+              .join(' — ')
+          : `Could not ${isNewProject ? 'create' : 'update'} the project (HTTP ${response.status})`
+        throw new Error(message || `Could not ${isNewProject ? 'create' : 'update'} the project`)
       }
       
       // Show success message
       toast.success(isNewProject ? 'Project created successfully!' : 'Project updated successfully!')
       
       // Redirect to project page if it's a new project
-      if (isNewProject && result.project) {
+      if (isNewProject && result?.project) {
         router.push(`/projects/${result.project.project_slug}/overview`)
       }
       
     } catch (error) {
       console.error('❌ Error saving project:', error)
-      toast.error(`Error saving project: ${error.message}`)
+      const action = isNewProject ? 'create the project' : 'update the project'
+      toast.error(getClientErrorMessage(error, action), {
+        position: 'top-right',
+        autoClose: 8000,
+      })
     } finally {
       setSaving(false)
     }
@@ -550,7 +592,7 @@ const ProjectOverviewPage = () => {
   const handleDelete = async () => {
     if (isNewProject) return
     if (!formData.projectId) {
-      toast.error('Missing project_id. Cannot delete.')
+      toast.error('Missing project ID. Cannot delete this project.')
       return
     }
     setDeleting(true)
@@ -560,18 +602,34 @@ const ProjectOverviewPage = () => {
         method: 'DELETE'
       })
       
-      const result = await response.json()
+      const result = await response.json().catch(() => null)
       
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to delete project')
+        const message = result
+          ? [result.error, result.details]
+              .filter((v) => typeof v === 'string' && v.trim())
+              .filter((v, i, a) => a.indexOf(v) === i)
+              .join(' — ')
+          : `Could not delete the project (HTTP ${response.status})`
+        throw new Error(message || 'Could not delete the project')
       }
       
       toast.success('Project deleted successfully!')
-      router.push('/projects')
+      // Clear form immediately, then leave the deleted project route
+      setFormData({
+        ...EMPTY_FORM_DATA,
+        location: { ...EMPTY_FORM_DATA.location, gpsCoordinates: { lat: '', lng: '' } },
+      })
+      setGpsUserEdited(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      router.replace('/projects/addNewProject/overview')
       
     } catch (error) {
       console.error('❌ Error deleting project:', error)
-      toast.error(`Error deleting project: ${error.message}`)
+      toast.error(getClientErrorMessage(error, 'delete the project'), {
+        position: 'top-right',
+        autoClose: 8000,
+      })
     } finally {
       setDeleting(false)
       setShowDeleteModal(false)

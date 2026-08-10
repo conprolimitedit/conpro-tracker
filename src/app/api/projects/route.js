@@ -6,6 +6,7 @@ import {
   PROJECT_SEARCH_FIELDS,
   quotePostgrestValue,
 } from '../../lib/postgrestSearch'
+import { humanizeDbError } from '../../lib/apiError'
 
 // Initialize Supabase client with service role key for full access
 const supabase = createClient(
@@ -306,7 +307,12 @@ export async function POST(request) {
         })
         
         if (!uploadResponse.ok) {
-          throw new Error(`Image upload failed: ${uploadResponse.status}`)
+          const uploadErrBody = await uploadResponse.json().catch(() => ({}))
+          throw new Error(
+            uploadErrBody.error ||
+              uploadErrBody.details ||
+              `Cover image upload failed (HTTP ${uploadResponse.status})`
+          )
         }
         
         const uploadResult = await uploadResponse.json()
@@ -322,11 +328,15 @@ export async function POST(request) {
           }
           console.log('✅ Image uploaded successfully:', coverImageData)
         } else {
-          throw new Error(uploadResult.error || 'Image upload failed')
+          throw new Error(uploadResult.error || uploadResult.details || 'Cover image upload failed')
         }
       } catch (imageError) {
         console.error('❌ Image upload failed:', imageError)
-        // Continue without image if upload fails
+        return NextResponse.json({
+          success: false,
+          error: 'Cover image upload failed',
+          details: imageError.message || 'Could not upload the cover image'
+        }, { status: 400 })
       }
     } else if (body.project_cover_image && typeof body.project_cover_image === 'string') {
       // Existing image URL
@@ -425,8 +435,9 @@ export async function POST(request) {
       console.error('❌ Database error:', error)
       return NextResponse.json({
         success: false,
-        error: 'Failed to create project',
-        details: error.message
+        error: humanizeDbError(error),
+        details: error.message,
+        code: error.code || null
       }, { status: 500 })
     }
 
@@ -448,7 +459,7 @@ export async function POST(request) {
     console.error('💥 Create project error:', error)
     return NextResponse.json({
       success: false,
-      error: 'Internal server error',
+      error: 'Could not create the project',
       details: error.message
     }, { status: 500 })
   }

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { humanizeDbError } from '../../../lib/apiError'
 import { resolveProjectEntities } from '../../../lib/resolveEntities'
 
 // Initialize Supabase client with service role key for full access
@@ -138,8 +139,9 @@ export async function PUT(request, { params }) {
       console.error('❌ Database error:', error)
       return NextResponse.json({
         success: false,
-        error: 'Failed to update project',
-        details: error.message
+        error: humanizeDbError(error),
+        details: error.message,
+        code: error.code || null
       }, { status: 500 })
     }
 
@@ -191,8 +193,9 @@ export async function DELETE(request, { params }) {
       console.error('❌ Database error:', error)
       return NextResponse.json({
         success: false,
-        error: 'Failed to delete project',
-        details: error.message
+        error: humanizeDbError(error),
+        details: error.message,
+        code: error.code || null
       }, { status: 500 })
     }
 

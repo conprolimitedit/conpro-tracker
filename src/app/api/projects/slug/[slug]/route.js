@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { resolveProjectEntities } from '../../../../lib/resolveEntities'
+import { humanizeDbError } from '../../../../lib/apiError'
 
 // Initialize Supabase client with service role key for full access
 const supabase = createClient(
@@ -145,7 +146,12 @@ export async function PUT(request, { params }) {
         })
         
         if (!uploadResponse.ok) {
-          throw new Error(`Image upload failed: ${uploadResponse.status}`)
+          const uploadErrBody = await uploadResponse.json().catch(() => ({}))
+          throw new Error(
+            uploadErrBody.error ||
+              uploadErrBody.details ||
+              `Cover image upload failed (HTTP ${uploadResponse.status})`
+          )
         }
         
         const uploadResult = await uploadResponse.json()
@@ -177,11 +183,15 @@ export async function PUT(request, { params }) {
             console.warn('⚠️ Error during old cover cleanup:', cleanupErr?.message)
           }
         } else {
-          throw new Error(uploadResult.error || 'Image upload failed')
+          throw new Error(uploadResult.error || uploadResult.details || 'Cover image upload failed')
         }
       } catch (imageError) {
         console.error('❌ Image upload failed:', imageError)
-        // Continue without image if upload fails
+        return NextResponse.json({
+          success: false,
+          error: 'Cover image upload failed',
+          details: imageError.message || 'Could not upload the cover image'
+        }, { status: 400 })
       }
     } else if (body.project_cover_image && typeof body.project_cover_image === 'string') {
       // Existing image URL
@@ -267,8 +277,9 @@ export async function PUT(request, { params }) {
       console.error('❌ Database error:', error)
       return NextResponse.json({
         success: false,
-        error: 'Failed to update project',
-        details: error.message
+        error: humanizeDbError(error),
+        details: error.message,
+        code: error.code || null
       }, { status: 500 })
     }
 
@@ -308,7 +319,7 @@ export async function PUT(request, { params }) {
     console.error('💥 Update project by slug error:', error)
     return NextResponse.json({
       success: false,
-      error: 'Internal server error',
+      error: 'Could not update the project',
       details: error.message
     }, { status: 500 })
   }

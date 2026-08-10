@@ -3,14 +3,30 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'react-toastify'
 import { FiMapPin, FiSearch, FiChevronDown, FiPlus } from 'react-icons/fi'
 import LocationMap from './LocationMap'
+import { COUNTRY_NAMES, getCountryCodeByName } from '../Data/Countries'
+
+/** Cities already used on projects for this country (optional region filter). */
+async function fetchCitiesFromProjects(country, region) {
+  try {
+    const params = new URLSearchParams({ country })
+    if (region) params.set('region', region)
+    const response = await fetch(`/api/locations/cities?${params.toString()}`)
+    if (!response.ok) return []
+    const data = await response.json()
+    return Array.isArray(data.cities) ? data.cities : []
+  } catch (err) {
+    console.error('Error fetching cities from projects:', err)
+    return []
+  }
+}
 
 const EnhancedLocationSelector = ({ location, onLocationChange, cityLabel = 'City' }) => {
   const [searchTerm, setSearchTerm] = useState('')
-  const [countries, setCountries] = useState([])
+  const [countries] = useState(COUNTRY_NAMES)
   const [regions, setRegions] = useState([])
   const [cities, setCities] = useState([])
   const [towns, setTowns] = useState([])
-  const [filteredCountries, setFilteredCountries] = useState([])
+  const [filteredCountries, setFilteredCountries] = useState(COUNTRY_NAMES)
   const [filteredRegions, setFilteredRegions] = useState([])
   const [filteredCities, setFilteredCities] = useState([])
   const [filteredTowns, setFilteredTowns] = useState([])
@@ -209,64 +225,14 @@ const EnhancedLocationSelector = ({ location, onLocationChange, cityLabel = 'Cit
 
     // Get alternative states for specific countries when the main API fails
   const getAlternativeStates = async (countryName) => {
-    // Try to fetch from a different API as fallback
-    try {
-      // Try using the country code instead of name
-      const countryCode = await getCountryCode(countryName);
-      if (countryCode) {
-        const response = await fetch(`https://restcountries.com/v3.1/alpha/${countryCode}?fields=subregion,region`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.subregion) {
-            const states = [{
-              id: 1,
-              name: data.subregion,
-              country: countryName,
-              type: 'Subregion',
-              source: 'REST Countries API'
-            }];
-            
-            return states;
-          }
-        }
-      }
-    } catch (error) {
-      console.log('Alternative API fetch failed:', error);
-    }
-
+    // REST Countries fallback removed — use static country codes only when needed
     return [];
   };
 
-  // Get country code from country name
+  // Get country code from static country list
   const getCountryCode = async (countryName) => {
-    try {
-      const response = await fetch(`https://restcountries.com/v3.1/name/${encodeURIComponent(countryName)}?fields=cca2`);
-      if (response.ok) {
-        const data = await response.json();
-        return data[0]?.cca2;
-      }
-    } catch (error) {
-      console.log('Error getting country code:', error);
-    }
-    return null;
+    return getCountryCodeByName(countryName);
   };
-
-  // Fetch countries from REST Countries API
-  useEffect(() => {
-    fetch("https://restcountries.com/v3.1/all?fields=name,cca2")
-      .then((res) => res.json())
-      .then((data) => {
-        const sorted = data
-          .map((c) => c.name.common)
-          .sort((a, b) => a.localeCompare(b));
-        setCountries(sorted);
-      })
-      .catch((error) => {
-        console.error('Error fetching countries:', error);
-        // Set empty countries if API fails
-        setCountries([]);
-      });
-  }, []);
 
     // Fetch states (regions) when country changes using countriesnow.space API
   useEffect(() => {
@@ -337,14 +303,22 @@ const EnhancedLocationSelector = ({ location, onLocationChange, cityLabel = 'Cit
           return;
         }
         
-        // No states data available
+        // No states data available — allow custom entry
         setRegions([]);
+        toast.info(
+          `No regions/states found for ${location.country}. You can enter a custom region.`,
+          { autoClose: 5000 }
+        );
         
       } catch (error) {
         console.error('Error fetching states:', error);
         
         // Set empty regions if no data available
         setRegions([]);
+        const msg = /failed to fetch|networkerror|load failed/i.test(error?.message || '')
+          ? `Could not load regions for ${location.country}. Check your connection, then enter a custom region if needed.`
+          : `Could not load regions for ${location.country}: ${error.message || 'Unknown error'}. You can enter a custom region.`;
+        toast.error(msg, { autoClose: 7000 });
       } finally {
         setLoading(false);
       }
@@ -363,6 +337,9 @@ const EnhancedLocationSelector = ({ location, onLocationChange, cityLabel = 'Cit
     setLoading(true);
     
     const fetchCities = async () => {
+      let processedCities = [];
+      let externalFailed = false;
+
       try {
         const response = await fetch("https://countriesnow.space/api/v0.1/countries/state/cities", {
           method: "POST",
@@ -373,12 +350,14 @@ const EnhancedLocationSelector = ({ location, onLocationChange, cityLabel = 'Cit
           }),
         });
         
-        if (response.ok) {
+        if (!response.ok) {
+          externalFailed = true;
+        } else {
           const data = await response.json();
           const cities = data.data || [];
           
           // Handle both string and object formats from the API
-          const processedCities = cities.map((city, index) => {
+          processedCities = cities.map((city, index) => {
             try {
               // Check if city is an object with name property
               const cityName = typeof city === 'object' && city.name ? city.name : city;
@@ -398,23 +377,58 @@ const EnhancedLocationSelector = ({ location, onLocationChange, cityLabel = 'Cit
                 source: 'API'
               };
             }
-          }).filter(Boolean); // Remove any undefined entries
-          
-          setCities(processedCities);
-          fetchedCitiesRef.current = true;
-          // Don't clear existing values - just fetch the cities for dropdown options
-          
-        } else {
-          setCities([]);
+          }).filter(Boolean);
         }
-        
       } catch (error) {
         console.error('Error fetching cities:', error);
-        // Set empty cities if no data available
-        setCities([]);
-      } finally {
-        setLoading(false);
+        externalFailed = true;
       }
+
+      // If external API failed or returned nothing, use cities from existing projects
+      if (externalFailed || processedCities.length === 0) {
+        const dbCities = await fetchCitiesFromProjects(location.country, location.region);
+        if (dbCities.length > 0) {
+          setCities(dbCities);
+          fetchedCitiesRef.current = true;
+          toast.info(
+            externalFailed
+              ? `External cities lookup failed — showing ${dbCities.length} city/cities from existing projects in ${location.country}.`
+              : `No cities from the lookup API — showing ${dbCities.length} city/cities from existing projects in ${location.country}.`,
+            { autoClose: 5000 }
+          );
+          setLoading(false);
+          return;
+        }
+
+        // Broader fallback: country only (ignore region match)
+        if (location.region) {
+          const countryCities = await fetchCitiesFromProjects(location.country);
+          if (countryCities.length > 0) {
+            setCities(countryCities);
+            fetchedCitiesRef.current = true;
+            toast.info(
+              `Showing ${countryCities.length} city/cities from existing projects in ${location.country}.`,
+              { autoClose: 5000 }
+            );
+            setLoading(false);
+            return;
+          }
+        }
+
+        setCities([]);
+        toast.info(
+          externalFailed
+            ? `Could not load cities for ${location.region}. No matching cities in existing projects either — enter a custom city.`
+            : `No cities found for ${location.region}, ${location.country}. You can enter a custom city/town.`,
+          { autoClose: 6000 }
+        );
+        setLoading(false);
+        return;
+      }
+
+      setCities(processedCities);
+      fetchedCitiesRef.current = true;
+      setLoading(false);
     };
     
     fetchCities();
@@ -503,12 +517,25 @@ const EnhancedLocationSelector = ({ location, onLocationChange, cityLabel = 'Cit
     }
   }
 
-  // Fetch cities for custom region (placeholder for future API integration)
-  const fetchCitiesForCustomRegion = (regionName) => {
-    // For now, just set empty cities since we don't have a cities API for custom regions
-    // In the future, this could integrate with a cities API
-    setCities([])
-    setFilteredCities([])
+  // Custom region: load cities from existing projects for this country
+  const fetchCitiesForCustomRegion = async (regionName) => {
+    setLoading(true)
+    try {
+      let dbCities = await fetchCitiesFromProjects(location.country, regionName)
+      if (dbCities.length === 0) {
+        dbCities = await fetchCitiesFromProjects(location.country)
+      }
+      setCities(dbCities)
+      setFilteredCities(dbCities)
+      if (dbCities.length > 0) {
+        toast.info(
+          `Showing ${dbCities.length} city/cities from existing projects in ${location.country}.`,
+          { autoClose: 5000 }
+        )
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   // Filter locations based on search term
@@ -681,7 +708,11 @@ const EnhancedLocationSelector = ({ location, onLocationChange, cityLabel = 'Cit
       toast.success('Location updated from search')
     } catch (err) {
       console.error('Geocode search error:', err)
-      toast.error('Search failed. Try a more specific place name')
+      toast.error(
+        /failed to fetch|networkerror|load failed/i.test(err?.message || '')
+          ? 'Location search failed due to a network error. Check your connection and try again.'
+          : `Location search failed: ${err?.message || 'Try a more specific place name'}`
+      )
     } finally {
       setLoading(false)
     }
@@ -941,9 +972,13 @@ const EnhancedLocationSelector = ({ location, onLocationChange, cityLabel = 'Cit
                       <span className="font-medium">{safeRenderText(city.name)}</span>
                       <div className="flex items-center space-x-2 text-xs text-gray-500 dark:text-gray-400">
                         {city.type && <span>{safeRenderText(city.type)}</span>}
-                        {city.source && city.source === 'Custom' && (
-                          <span className="px-1 py-0.5 rounded text-xs bg-purple-100 text-purple-800">
-                            Custom
+                        {city.source && (
+                          <span className={`px-1 py-0.5 rounded text-xs ${
+                            city.source === 'API' ? 'bg-green-100 text-green-800' :
+                            city.source === 'Database' ? 'bg-blue-100 text-blue-800' :
+                            'bg-purple-100 text-purple-800'
+                          }`}>
+                            {safeRenderText(city.source)}
                           </span>
                         )}
                       </div>
