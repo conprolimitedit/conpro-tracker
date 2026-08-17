@@ -246,10 +246,14 @@ const ProjectOverview = () => {
               required
             >
               <option value="">Select Status</option>
+              <option value="yet-to-start">Yet to Start</option>
+              <option value="design">Design</option>
               <option value="planning">Planning</option>
               <option value="in-progress">In Progress</option>
               <option value="completed">Completed</option>
               <option value="on-hold">On Hold</option>
+              <option value="terminated">Terminated</option>
+              <option value="abandoned">Abandoned</option>
               <option value="cancelled">Cancelled</option>
             </select>
           </div>

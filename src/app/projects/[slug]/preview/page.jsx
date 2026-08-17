@@ -269,6 +269,11 @@ const ProjectPreviewPage = () => {
       case 'in progress':
       case 'in-progress':
         return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300'
+      case 'design':
+        return 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300'
+      case 'yet to start':
+      case 'yet-to-start':
+        return 'bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-300'
       case 'planning':
         return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300'
       case 'on hold':

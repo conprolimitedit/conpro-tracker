@@ -11,6 +11,7 @@ import StructureSearchDropdown from '../StructureSearchDropdown'
 import ProjectList from '../Projects/ProjectList'
 import { MdCancel } from "react-icons/md";
 import { useAuth } from '../../contexts/AuthContext'
+import { PROJECT_STATUS_OPTIONS } from '../../lib/projectStatuses'
 
 const MemoProjectMap = memo(ProjectMap)
 
@@ -268,12 +269,13 @@ const ProjectDashboardFixed = () => {
   const prevProjectIdRef = useRef('')
 
   const fetchProjects = async (page = 1, reset = false) => {
+    const controller = new AbortController()
     try {
       if (reset) {
         setLoading(true)
         setFiltering(true)
         setCurrentPage(1)
-        setDisplayedProjects([])
+        // Keep previous projects visible until new data arrives — avoid empty flash
       } else {
         setLoadingMore(true)
       }
@@ -286,7 +288,6 @@ const ProjectDashboardFixed = () => {
           // Controller already aborted, ignore
         }
       }
-      const controller = new AbortController()
       activeController.current = controller
 
       const params = buildQueryParams()
@@ -296,7 +297,10 @@ const ProjectDashboardFixed = () => {
       if (response.ok) {
         const data = await response.json()
         const newProjects = data.projects || []
-        console.log('Fetched projects:', newProjects.length, 'Total count:', totalProjectsCount)
+        if (typeof data.totalCount === 'number') {
+          setTotalProjectsCount(data.totalCount)
+        }
+        console.log('Fetched projects:', newProjects.length, 'Total count:', data.totalCount)
         
         if (reset) {
           setAllProjects(newProjects)
@@ -323,19 +327,22 @@ const ProjectDashboardFixed = () => {
         }
       }
     } catch (error) {
-      // Don't log AbortError as it's expected when canceling previous requests
-      if (error.name !== 'AbortError') {
-        console.error('Error fetching projects:', error)
+      // Don't clear state or flip loading flags for aborted requests — a newer fetch owns that
+      if (error.name === 'AbortError') {
+        return
       }
+      console.error('Error fetching projects:', error)
       if (reset) {
         setProjects([])
         setFilteredProjects([])
         setDisplayedProjects([])
       }
     } finally {
-      setLoading(false)
-      setFiltering(false)
-      setLoadingMore(false)
+      if (activeController.current === controller) {
+        setLoading(false)
+        setFiltering(false)
+        setLoadingMore(false)
+      }
     }
   }
 
@@ -705,19 +712,21 @@ const ProjectDashboardFixed = () => {
   }
 
   const getStatusColor = (status) => {
-    switch (status.toLowerCase()) {
+    switch ((status || '').toLowerCase().replace(/_/g, '-').replace(/\s+/g, '-')) {
       case 'completed':
         return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
-      case 'in progress':
+      case 'in-progress':
         return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300'
+      case 'design':
+        return 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300'
+      case 'yet-to-start':
+        return 'bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-300'
       case 'planning':
         return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300'
-      case 'on hold':
+      case 'on-hold':
         return 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300'
       case 'cancelled':
-        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
       case 'abandoned':
-        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
       case 'terminated':
         return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
       default:
@@ -1027,13 +1036,9 @@ const ProjectDashboardFixed = () => {
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   >
                     <option value="all">All Status</option>
-                    <option value="planning">Planning</option>
-                    <option value="in progress">In Progress</option>
-                    <option value="completed">Completed</option>
-                    <option value="on hold">On Hold</option>
-                    <option value="cancelled">Cancelled</option>
-                    <option value="abandoned">Abandoned</option>
-                    <option value="terminated">Terminated</option>
+                    {PROJECT_STATUS_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -1290,10 +1295,34 @@ const ProjectDashboardFixed = () => {
 
   if (initialLoad) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-400">Loading projects...</p>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="sticky top-0 z-50 bg-white/95 dark:bg-gray-800/95 backdrop-blur-md border-b border-gray-200 dark:border-gray-700 px-6 py-3">
+          <div className="flex justify-between items-center flex-wrap gap-3">
+            <div className="flex items-center space-x-4">
+              <div className="h-7 w-48 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+              <div className="h-7 w-36 bg-blue-100 dark:bg-blue-900/40 rounded-full animate-pulse" />
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="h-9 w-40 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse" />
+              <div className="h-9 w-10 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse" />
+              <div className="h-9 w-10 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse" />
+            </div>
+          </div>
+        </div>
+        <div className="relative h-[calc(100vh-4.5rem)] bg-gray-100 dark:bg-gray-800 animate-pulse">
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="bg-white/90 dark:bg-gray-900/90 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 px-6 py-5 w-full max-w-md mx-4 space-y-3">
+              <div className="h-4 w-40 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+              <div className="h-3 w-full bg-gray-100 dark:bg-gray-800 rounded animate-pulse" />
+              <div className="h-3 w-5/6 bg-gray-100 dark:bg-gray-800 rounded animate-pulse" />
+              <div className="grid grid-cols-3 gap-2 pt-2">
+                <div className="h-16 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse" />
+                <div className="h-16 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse" />
+                <div className="h-16 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse" />
+              </div>
+              <p className="text-center text-sm text-gray-500 dark:text-gray-400 pt-1">Loading projects…</p>
+            </div>
+          </div>
         </div>
       </div>
     )
@@ -1351,21 +1380,27 @@ const ProjectDashboardFixed = () => {
         {viewMode === 'map' && showMap && (
           <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
             <div className="h-screen relative">
-              {filtering ? (
-                <div className="absolute inset-0 flex items-center justify-center bg-gray-50 dark:bg-gray-800">
-                  <div className="text-center">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-                    <p className="text-gray-600 dark:text-gray-400">Loading projects...</p>
+              {(filtering || loading) && (
+                <div className="absolute inset-0 z-[500] flex items-center justify-center bg-white/70 dark:bg-gray-900/70 backdrop-blur-[1px]">
+                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 px-6 py-5 w-full max-w-sm mx-4 space-y-3 animate-pulse">
+                    <div className="h-4 w-36 bg-gray-200 dark:bg-gray-600 rounded" />
+                    <div className="h-3 w-full bg-gray-100 dark:bg-gray-700 rounded" />
+                    <div className="h-3 w-4/5 bg-gray-100 dark:bg-gray-700 rounded" />
+                    <div className="grid grid-cols-3 gap-2 pt-1">
+                      <div className="h-14 bg-gray-200 dark:bg-gray-600 rounded-lg" />
+                      <div className="h-14 bg-gray-200 dark:bg-gray-600 rounded-lg" />
+                      <div className="h-14 bg-gray-200 dark:bg-gray-600 rounded-lg" />
+                    </div>
+                    <p className="text-center text-sm text-gray-500 dark:text-gray-400">Updating projects…</p>
                   </div>
                 </div>
-              ) : (
+              )}
               <MemoProjectMap
                   projects={displayedProjects}
                 height="100%"
                 showPopup={true}
                 onMarkerClick={handleProjectClick}
               />
-              )}
             </div>
           </div>
         )}

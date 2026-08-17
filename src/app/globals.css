@@ -226,3 +226,22 @@ p {
   display: inline-block !important;
   width: 100% !important;
 }
+
+/* Project summary swiper — hide default Swiper arrow glyphs (we use custom SVG) */
+.project-summary-swiper .swiper-button-prev::after,
+.project-summary-swiper .swiper-button-next::after,
+.project-summary-prev::after,
+.project-summary-next::after {
+  content: none !important;
+  display: none !important;
+}
+
+.project-summary-swiper .swiper-pagination-bullet {
+  background: #93c5fd;
+  opacity: 0.5;
+}
+
+.project-summary-swiper .swiper-pagination-bullet-active {
+  background: #2563eb;
+  opacity: 1;
+}

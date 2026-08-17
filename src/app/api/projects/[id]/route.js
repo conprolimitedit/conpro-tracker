@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { humanizeDbError } from '../../../lib/apiError'
 import { resolveProjectEntities } from '../../../lib/resolveEntities'
+import { statusToColumn } from '../../../lib/projectStatuses'
 
 // Initialize Supabase client with service role key for full access
 const supabase = createClient(
@@ -10,11 +11,6 @@ const supabase = createClient(
 )
 
 // --- Helpers for projects_summary updates ---
-const statusToColumn = (status) => {
-  if (!status) return null
-  return status.toLowerCase().replace(/\s+/g, '-').replace(/-/g, '_')
-}
-
 async function readSummary() {
   const { data, error } = await supabase
     .from('projects_summary')
@@ -26,19 +22,19 @@ async function readSummary() {
 }
 
 async function writeSummary(updated) {
+  const payload = {
+    total_projects: updated.total_projects,
+    last_updated: new Date().toISOString(),
+  }
+  for (const key of [
+    'planning', 'in_progress', 'completed', 'on_hold', 'terminated',
+    'abandoned', 'cancelled', 'design', 'yet_to_start',
+  ]) {
+    if (updated[key] !== undefined) payload[key] = updated[key]
+  }
   const { error } = await supabase
     .from('projects_summary')
-    .update({
-      planning: updated.planning,
-      in_progress: updated.in_progress,
-      completed: updated.completed,
-      on_hold: updated.on_hold,
-      terminated: updated.terminated,
-      abandoned: updated.abandoned,
-      cancelled: updated.cancelled,
-      total_projects: updated.total_projects,
-      last_updated: new Date().toISOString(),
-    })
+    .update(payload)
     .eq('id', 1)
   if (error) throw error
 }

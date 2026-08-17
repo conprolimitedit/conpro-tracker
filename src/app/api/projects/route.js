@@ -7,6 +7,7 @@ import {
   quotePostgrestValue,
 } from '../../lib/postgrestSearch'
 import { humanizeDbError } from '../../lib/apiError'
+import { statusToColumn, normalizeStatusValue } from '../../lib/projectStatuses'
 
 // Initialize Supabase client with service role key for full access
 const supabase = createClient(
@@ -15,11 +16,6 @@ const supabase = createClient(
 )
 
 // --- Helpers for projects_summary updates ---
-const statusToColumn = (status) => {
-  if (!status) return null
-  return status.toLowerCase().replace(/\s+/g, '-').replace(/-/g, '_')
-}
-
 async function readSummary() {
   const { data, error } = await supabase
     .from('projects_summary')
@@ -31,19 +27,28 @@ async function readSummary() {
 }
 
 async function writeSummary(updated) {
+  // Only write keys that already exist on the summary row (plus total / timestamp)
+  const payload = {
+    total_projects: updated.total_projects,
+    last_updated: new Date().toISOString(),
+  }
+  const knownKeys = [
+    'planning',
+    'in_progress',
+    'completed',
+    'on_hold',
+    'terminated',
+    'abandoned',
+    'cancelled',
+    'design',
+    'yet_to_start',
+  ]
+  for (const key of knownKeys) {
+    if (updated[key] !== undefined) payload[key] = updated[key]
+  }
   const { error } = await supabase
     .from('projects_summary')
-    .update({
-      planning: updated.planning,
-      in_progress: updated.in_progress,
-      completed: updated.completed,
-      on_hold: updated.on_hold,
-      terminated: updated.terminated,
-      abandoned: updated.abandoned,
-      cancelled: updated.cancelled,
-      total_projects: updated.total_projects,
-      last_updated: new Date().toISOString(),
-    })
+    .update(payload)
     .eq('id', 1)
   if (error) throw error
 }
@@ -52,6 +57,13 @@ async function incrementSummaryFor(status) {
   const column = statusToColumn(status)
   if (!column) return
   const summary = await readSummary()
+  // Skip unknown columns so create still works before DB migration
+  if (summary[column] === undefined && column !== 'total_projects') {
+    const next = { ...summary }
+    next.total_projects = (Number(next.total_projects) || 0) + 1
+    await writeSummary(next)
+    return
+  }
   const next = { ...summary }
   next[column] = (Number(next[column]) || 0) + 1
   next.total_projects = (Number(next.total_projects) || 0) + 1
@@ -65,9 +77,12 @@ async function adjustSummaryOnUpdate(oldStatus, newStatus) {
   if (oldCol === newCol) return
   const summary = await readSummary()
   const next = { ...summary }
-  if (oldCol) next[oldCol] = Math.max(0, (Number(next[oldCol]) || 0) - 1)
-  if (newCol) next[newCol] = (Number(next[newCol]) || 0) + 1
-  // total unchanged on update
+  if (oldCol && summary[oldCol] !== undefined) {
+    next[oldCol] = Math.max(0, (Number(next[oldCol]) || 0) - 1)
+  }
+  if (newCol && summary[newCol] !== undefined) {
+    next[newCol] = (Number(next[newCol]) || 0) + 1
+  }
   await writeSummary(next)
 }
 
@@ -76,7 +91,9 @@ async function decrementSummaryFor(status) {
   if (!column) return
   const summary = await readSummary()
   const next = { ...summary }
-  next[column] = Math.max(0, (Number(next[column]) || 0) - 1)
+  if (summary[column] !== undefined) {
+    next[column] = Math.max(0, (Number(next[column]) || 0) - 1)
+  }
   next.total_projects = Math.max(0, (Number(next.total_projects) || 0) - 1)
   await writeSummary(next)
 }
@@ -119,15 +136,23 @@ export async function GET(request) {
     const projectStartDate = searchParams.get('projectStartDate') || ''
     const projectEndDate = searchParams.get('projectEndDate') || ''
 
-    // Base query
+    // Base query (exact count of all matching rows, not just this page)
     let query = supabase
       .from('projects')
-      .select('*')
+      .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
 
     // Apply filters
     if (status) {
-      query = query.eq('project_status', status)
+      const normalized = normalizeStatusValue(status)
+      const underscored = statusToColumn(normalized)
+      const spaced = underscored?.replace(/_/g, ' ')
+      const variants = [...new Set([normalized, underscored, spaced].filter(Boolean))]
+      if (variants.length > 1) {
+        query = query.or(variants.map((v) => `project_status.eq.${v}`).join(','))
+      } else {
+        query = query.eq('project_status', normalized)
+      }
     }
     if (priority) {
       query = query.eq('project_priority', priority)
@@ -192,7 +217,7 @@ export async function GET(request) {
       const ids = (btRows || []).map(r => r.id).filter(Boolean)
       if (ids.length === 0) {
         // Short-circuit: nothing will match
-        return NextResponse.json({ success: true, count: 0, projects: [], message: 'No projects found' })
+        return NextResponse.json({ success: true, count: 0, totalCount: 0, projects: [], message: 'No projects found' })
       }
       // Match any of the found IDs
       query = query.overlaps('building_types', ids)
@@ -210,7 +235,7 @@ export async function GET(request) {
     }
 
     // Apply pagination last
-    let { data: projects, error } = await query.range(from, to)
+    let { data: projects, error, count: totalCount } = await query.range(from, to)
 
     if (error) {
       console.error('❌ Database error:', error)
@@ -224,18 +249,19 @@ export async function GET(request) {
     // Fallback: if free-text search returned nothing, try exact project_name match
     const anyOtherFilters = Boolean(status || priority || clientId || contractorId || cowId || serviceId || buildingTypeId || buildingTypeIdExact || projectTypeId || projectCategoryId || fundingAgencyId || projectManagerId || projectCoordinatorId || locationType || locationValue || buildingTypeSearch || contractDate || projectStartDate || projectEndDate)
     if (search && !projectId && !projectSlug && (!projects || projects.length === 0) && !anyOtherFilters) {
-      const { data: exactProjects, error: exactErr } = await supabase
+      const { data: exactProjects, error: exactErr, count: exactCount } = await supabase
         .from('projects')
-        .select('*')
+        .select('*', { count: 'exact' })
         .eq('project_name', search)
         .order('created_at', { ascending: false })
         .range(from, to)
       if (!exactErr && exactProjects && exactProjects.length > 0) {
         projects = exactProjects
+        totalCount = exactCount
       }
     }
 
-    console.log(`✅ Successfully fetched ${projects?.length || 0} projects`)
+    console.log(`✅ Successfully fetched ${projects?.length || 0} projects (total matching: ${totalCount ?? 0})`)
     
     // Resolve entity IDs to full objects for all projects
     const resolvedProjects = await resolveMultipleProjectEntities(projects || [])
@@ -243,6 +269,7 @@ export async function GET(request) {
     return NextResponse.json({
       success: true,
       count: resolvedProjects?.length || 0,
+      totalCount: typeof totalCount === 'number' ? totalCount : (resolvedProjects?.length || 0),
       projects: resolvedProjects || [],
       message: resolvedProjects?.length === 0 ? 'No projects found' : 'Projects fetched successfully'
     })

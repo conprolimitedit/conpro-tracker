@@ -4,6 +4,18 @@ import {
   PROJECT_SEARCH_FIELDS,
   quotePostgrestValue,
 } from '@/app/lib/postgrestSearch'
+import { normalizeStatusValue, statusToColumn } from '@/app/lib/projectStatuses'
+
+/** Match hyphen / space / underscore status variants stored historically */
+function statusFilterOrClause(status) {
+  const normalized = normalizeStatusValue(status)
+  if (!normalized || normalized === 'all') return null
+  const underscored = statusToColumn(normalized)
+  const spaced = underscored?.replace(/_/g, ' ')
+  const variants = [...new Set([normalized, underscored, spaced].filter(Boolean))]
+  if (variants.length === 1) return null
+  return variants.map((v) => `project_status.eq.${v}`).join(',')
+}
 
 export async function GET(request) {
   try {
@@ -24,10 +36,15 @@ export async function GET(request) {
       query = query.or(buildMultiFieldIlikeOr(PROJECT_SEARCH_FIELDS, search))
     }
     
-    // Apply status filter
+    // Apply status filter (accept hyphen / space / underscore variants)
     const status = searchParams.get('status')
     if (status && status !== 'all') {
-      query = query.eq('project_status', status)
+      const orClause = statusFilterOrClause(status)
+      if (orClause) {
+        query = query.or(orClause)
+      } else {
+        query = query.eq('project_status', normalizeStatusValue(status))
+      }
     }
     
     // Apply priority filter

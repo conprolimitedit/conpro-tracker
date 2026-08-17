@@ -1,7 +1,7 @@
 import React from 'react'
 import { FiTrendingUp, FiCheckCircle, FiClock, FiXCircle, FiCalendar } from 'react-icons/fi'
 
-const DataCard = ({ title, value, icon, trend, trendValue, color = 'blue' }) => {
+const DataCard = ({ title, value, icon, trend, trendValue, shareLabel, color = 'blue' }) => {
   const getIcon = () => {
     switch (icon) {
       case 'trending':
@@ -93,14 +93,18 @@ const DataCard = ({ title, value, icon, trend, trendValue, color = 'blue' }) => 
             {title}
           </p>
 
-          {trend && (
+          {shareLabel != null && shareLabel !== '' ? (
+            <div className="text-xs font-semibold text-gray-600 dark:text-gray-300" title="Share of all projects">
+              {shareLabel}
+            </div>
+          ) : trend ? (
             <div className={`flex items-center space-x-1 text-xs font-medium ${
               trend === 'up' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
             }`}>
               <span>{trend === 'up' ? '↗' : '↘'}</span>
               <span>{trendValue}</span>
             </div>
-          )}
+          ) : null}
         </div>
         
         <div className="space-y-1">
